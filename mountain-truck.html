@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#12161d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Robot Haul — The Mountain</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: #12161d;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  #game { display: block; position: fixed; inset: 0; }
+
+  .pad {
+    position: fixed; bottom: max(18px, env(safe-area-inset-bottom));
+    display: flex; gap: 12px; z-index: 5;
+  }
+  .pad.left  { left:  max(16px, env(safe-area-inset-left)); }
+  .pad.right { right: max(16px, env(safe-area-inset-right)); }
+  button.ctl {
+    min-width: 108px; height: 74px; border-radius: 18px; border: 2px solid rgba(255,255,255,0.22);
+    background: rgba(16,20,28,0.72); color: #eef4fa; font: 700 15px/1 system-ui, sans-serif;
+    letter-spacing: 0.06em; backdrop-filter: blur(6px); cursor: pointer;
+  }
+  button.ctl:active { background: rgba(70,86,110,0.9); transform: translateY(2px); }
+  #gas   { border-color: #6fcf7a; }
+  #brake { border-color: #e8a34f; }
+  #horn  { min-width: 84px; border-color: #7ec8f2; font-size: 22px; }
+  #dbg {
+    position: fixed; top: max(12px, env(safe-area-inset-top)); right: 50%;
+    transform: translateX(50%); z-index: 5; height: 30px; padding: 0 12px;
+    border-radius: 9px; border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(16,20,28,0.6); color: #9aa4b2; font: 600 10px/1 ui-monospace, monospace;
+  }
+
+  #tapstart {
+    position: fixed; inset: 0; display: grid; place-content: center; gap: 10px;
+    text-align: center; z-index: 10; background: rgba(10,13,19,0.72); padding: 24px;
+  }
+  /* `display: grid` above beats the hidden attribute's default display:none,
+     so without this the splash never actually goes away. */
+  #tapstart[hidden] { display: none !important; }
+  #tapstart h1 { margin: 0; font-size: clamp(26px, 7vw, 44px); color: #f2f6fa; }
+  #tapstart p  { margin: 0; color: #9aa4b2; font-size: 13px; line-height: 1.6; max-width: 34ch; }
+
+  #endcard {
+    position: fixed; inset: 0; display: grid; place-content: center; gap: 12px;
+    text-align: center; z-index: 12; background: rgba(8,11,16,0.88); padding: 24px;
+  }
+  #endcard[hidden] { display: none !important; }
+  #endtitle { margin: 0; font: 800 clamp(24px, 7vw, 40px)/1.1 ui-monospace, monospace; color: #ff8a7a; }
+  #enddetail { margin: 0; color: #dfe8f2; font-size: 14px; max-width: 36ch; }
+  #endorder { margin: 0; color: #8d97a5; font-size: 12px; }
+  #again {
+    margin-top: 6px; justify-self: center; height: 44px; padding: 0 22px; border-radius: 12px;
+    border: 2px solid #7ec8f2; background: transparent; color: #eef4fa; font: 700 14px system-ui;
+  }
+
+  @media (orientation: portrait) {
+    #rotate { display: grid; }
+  }
+  #rotate {
+    display: none; position: fixed; inset: 0; z-index: 20; place-content: center;
+    text-align: center; background: #12161d; color: #dfe8f2; padding: 30px;
+    font-size: 15px; line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<button id="dbg">~ DEBUG</button>
+
+<div class="pad left">
+  <button class="ctl" id="brake">BRAKE</button>
+  <button class="ctl" id="horn">🔔</button>
+</div>
+<div class="pad right">
+  <button class="ctl" id="gas">GAS</button>
+</div>
+
+<div id="tapstart">
+  <h1>Robot Haul</h1>
+  <p><b>Dadbot</b> drives. Four passenger bots ride on the trailer. They talk. They panic.
+     They fall off. You honk.</p>
+  <p>Hold <b>GAS</b> to climb, <b>BRAKE</b> to slow or roll back, <b>🔔</b> to scare the cargo
+     (this is not helpful). Reach <b>TOP</b> with at least two bots still aboard.</p>
+  <p>Desktop: <b>D</b>/<b>→</b> gas, <b>A</b>/<b>←</b> brake, <b>Space</b> honk,
+     <b>R</b> restart, <b>~</b> debug.</p>
+  <p style="color:#6f7986">Tap anywhere to start (and to allow sound).</p>
+</div>
+
+<div id="endcard" hidden>
+  <h2 id="endtitle"></h2>
+  <p id="enddetail"></p>
+  <p id="endorder"></p>
+  <button id="again">Again</button>
+</div>
+
+<div id="rotate">🔄<br>Turn your phone sideways.<br>This is a landscape hill.</div>
+
+<!-- Matter.js is vendored (MIT, v0.20.0) rather than pulled from a CDN: the game
+     is meant to work on a phone with no signal, and a blocked CDN is a blank screen. -->
+<script src="./vendor/matter.min.js"></script>
+<script type="module" src="./src/main.js"></script>
+<script>
+  // Any first touch anywhere dismisses the splash and unlocks audio.
+  addEventListener('pointerdown', () => {
+    const s = document.getElementById('tapstart');
+    if (s) s.hidden = true;
+  });
+</script>
+</body>
+</html>
