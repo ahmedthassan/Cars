@@ -20,15 +20,46 @@ Not "a serious truck sim." It's a moving argument.
 
 When a bot leaves the truck they get a last line. Dadbot then says something unhelpful.
 
-## Play now
+## Play it
 
-1. Serve the folder (below) and open `mountain-truck.html` on your phone.
-2. Landscape.
-3. **GAS** / **BRAKE** to climb.
-4. **🔔 Honk** to scare the cargo (this is not helpful).
-5. Reach **TOP** with at least 2 bots still aboard.
+**On a computer — 30 seconds, nothing to install:**
 
-Desktop: `D`/`→` gas, `A`/`←` brake, `Space` honk, `R` restart, `~` debug overlay.
+```bash
+git clone https://github.com/ahmedthassan/Cars.git
+cd Cars && git checkout claude/game-plan-mode-wm0nae
+python3 -m http.server 5173
+```
+
+Open <http://localhost:5173/mountain-truck.html>. Resize the window wide and short to see
+what it looks like on a phone.
+
+**On your phone, same wifi:** find your computer's local IP (`ipconfig getifaddr en0` on a Mac,
+`hostname -I` on Linux) and open `http://<that-ip>:5173/mountain-truck.html`. Turn the phone
+landscape and add it to your home screen — it works offline from then on.
+
+**As a real Android app:** `npm install && npm run apk`, then install
+`android/app/build/outputs/apk/debug/app-debug.apk`. You'll need to allow installs from
+unknown sources; it's debug-signed, so it's for your own device.
+
+**As a real iOS app:** needs a Mac — see [MOBILE.md](MOBILE.md).
+
+**As a link you can send people:** deploy `www/` to any static host. A GitHub Pages workflow is
+in `.github/workflows/pages.yml`; enable it under Settings → Pages → Source: GitHub Actions.
+Pages on a *private* repo needs a paid plan, so on a free account make the repo public first or
+use another host.
+
+### How to play
+
+1. Landscape.
+2. **GAS** / **BRAKE** to climb.
+3. **🔔 Honk** to scare the cargo (this is not helpful, and when someone is hanging on it is
+   actively murderous).
+4. Reach **TOP** with at least 2 bots still aboard.
+
+Desktop: `D`/`→` gas, `A`/`←` brake, `Space` honk, `R` restart, `Esc` pause, `~` debug overlay.
+
+The debug overlay is worth a look — it shows the live physics state, which trigger band is
+open, and the band behind every line that just fired.
 
 ## Run locally
 
