@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "python3 -m http.server 5173",
-    "test": "node --test test/dialogue.test.mjs",
+    "test": "node --test test/*.test.mjs",
     "build": "node tools/build-www.mjs",
     "icons": "node tools/make-icons.mjs",
     "sync": "npm run build && npx cap sync",

@@ -253,11 +253,15 @@ function releaseCling(Matter, world, bot) {
 }
 
 /** Shake every clinger. This is the sacrifice mechanic, and it is not subtle. */
-export function shakeClingers(truck, cost) {
+export function shakeClingers(truck, cost, deliberate = false) {
   const shaken = [];
   for (const b of truck.bots) {
     if (!b.clinging || b.lost) continue;
     b.grip -= cost;
+    // Remember a deliberate shake so the Incident Report can name the honk as
+    // the cause rather than filing it under "lost their grip". Landing hard on
+    // someone's fingers is bad luck; honking at them is a decision.
+    if (deliberate) b.shakenAt = truck.clock ?? 0;
     shaken.push(b.botId);
   }
   return shaken;
@@ -275,6 +279,7 @@ export function updateCling(Matter, world, truck, S, dt) {
   const P = PHYSICS;
   const lost = [];
   const recovered = [];
+  truck.clock = (truck.clock ?? 0) + dt;
 
   for (const b of truck.bots) {
     if (!b.clinging || b.lost) continue;
@@ -291,7 +296,9 @@ export function updateCling(Matter, world, truck, S, dt) {
 
     if (b.grip <= 0) {
       releaseCling(Matter, world, b);
-      lost.push(b.botId);
+      // A honk inside the last couple of seconds is why they are falling.
+      const honked = b.shakenAt !== undefined && truck.clock - b.shakenAt < 2.0;
+      lost.push({ botId: b.botId, cause: honked ? 'shaken' : 'grip' });
     } else if (b.grip >= P.clingBackAt) {
       // Hauled themselves back on. Put them on the bed rather than leaving them
       // hanging at full grip forever.

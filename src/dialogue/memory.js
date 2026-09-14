@@ -4,6 +4,7 @@
 // what happened in *previous* runs.
 
 import { DIALOGUE, ROBOTS } from '../config.js';
+import { nameOf } from '../roster.js';
 
 const KEY = 'robot-haul.memory.v1';
 
@@ -18,10 +19,25 @@ function safeStore() {
   }
 }
 
+/**
+ * Named causes of death. The spec asks for the cause to be NAMED on the
+ * Incident Report, not described — "Into The Void" is a thing you screenshot,
+ * "fell off at x=6400" is not.
+ */
+export const CAUSES = {
+  void:    'Into The Void',
+  road:    'Off The Trailer',
+  grip:    'Lost Their Grip',
+  shaken:  'Honked Off On Purpose',
+  flip:    'Under The Truck',
+  unknown: 'Unexplained',
+};
+
 export function createMemory(store = safeStore()) {
   const persisted = loadPersisted(store);
   return {
     deaths: [],          // in order
+    incidents: [],       // the full record behind each one
     lastDeath: null,
     blame: { driver: 0 },
     honks: 0,
@@ -51,13 +67,56 @@ function persist(m) {
   } catch { /* private mode: the jokes just don't carry over */ }
 }
 
-export function recordDeath(m, botId, cause = 'unknown') {
+export function recordDeath(m, botId, cause = 'unknown', extra = {}) {
   m.deaths.push(botId);
   m.lastDeath = botId;
   m.blame[botId] = (m.blame[botId] || 0) + 1;
   // Driving is, on balance, Dadbot's fault.
   m.blame.driver = (m.blame.driver || 0) + 1;
+  // Shaking someone off the side with the horn is not an accident, and the
+  // blame split should say so.
+  if (cause === 'shaken') m.blame.driver += 2;
   m.lastCause = cause;
+
+  m.incidents.push({
+    order: m.incidents.length + 1,
+    botId,
+    cause,
+    label: CAUSES[cause] || CAUSES.unknown,
+    quote: null,                       // filled in when their last line renders
+    altitude: extra.altitude ?? null,
+    t: extra.t ?? null,
+  });
+}
+
+/**
+ * Attach the line the bot actually said on the way out.
+ *
+ * The quote cannot be decided up front: which line fires comes out of the
+ * shuffle-bag at render time, so the report has to be told what was really
+ * said rather than reconstructing something plausible.
+ */
+export function recordLastWords(m, botId, text) {
+  for (let i = m.incidents.length - 1; i >= 0; i--) {
+    if (m.incidents[i].botId === botId && m.incidents[i].quote === null) {
+      m.incidents[i].quote = text;
+      return;
+    }
+  }
+}
+
+/**
+ * Blame as percentages, highest first. Everyone who contributed appears — the
+ * bots get a share for falling off, and Dadbot gets one for every departure,
+ * because he was driving.
+ */
+export function blameTable(m) {
+  const total = Object.values(m.blame).reduce((a, b) => a + b, 0);
+  if (!total) return [];
+  return Object.entries(m.blame)
+    .filter(([, n]) => n > 0)
+    .map(([who, n]) => ({ who, pct: Math.round((n / total) * 100) }))
+    .sort((a, b) => b.pct - a.pct || a.who.localeCompare(b.who));
 }
 
 export function recordHonk(m) { m.honks += 1; }
@@ -97,14 +156,18 @@ function honkDeafBot(m) {
   return pool[m.honks % pool.length];
 }
 
-const NAMES = Object.fromEntries(ROBOTS.map((r) => [r.id, r.name]));
-
-/** Fill {lastDeath}, {deathCount}, {firstDeath}, {honks} in a line. */
+/**
+ * Fill {lastDeath}, {deathCount}, {firstDeath}, {honks} in a line.
+ *
+ * Names are resolved through the roster on every call rather than from a map
+ * built at import time: players rename the crew to their friends, and a cached
+ * map would leave the dialogue calling someone by their old name.
+ */
 export function interpolate(text, m) {
   return text.replace(/\{(\w+)\}/g, (whole, token) => {
     switch (token) {
-      case 'lastDeath':  return NAMES[m.lastDeath] || 'somebody';
-      case 'firstDeath': return NAMES[m.deaths[0]] || 'somebody';
+      case 'lastDeath':  return m.lastDeath ? nameOf(m.lastDeath) : 'somebody';
+      case 'firstDeath': return m.deaths[0] ? nameOf(m.deaths[0]) : 'somebody';
       case 'deathCount': return String(m.deaths.length);
       case 'honks':      return String(m.honks);
       case 'flips':      return String(m.flips);

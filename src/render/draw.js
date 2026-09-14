@@ -1,5 +1,6 @@
 // ── Rendering ─────────────────────────────────────────────────────────────────
 import { GAME, PHYSICS, TERRAIN } from '../config.js';
+import { nameOf } from '../roster.js';
 import { isOverGap } from '../physics/terrain.js';
 
 export function createCamera() {
@@ -247,7 +248,9 @@ export function drawBots(ctx, cam, canvas, truck) {
     ctx.fill();
     ctx.fillStyle = '#f2f7fc';
     ctx.font = 'bold 8px system-ui, sans-serif';
-    ctx.fillText(r.name.toUpperCase(), 0, 11.5);
+    // Resolved live rather than from the snapshot taken when the truck was
+    // built, so a rename shows on the bodies immediately.
+    ctx.fillText(nameOf(b.botId).toUpperCase(), 0, 11.5);
     ctx.restore();
   }
   ctx.restore();

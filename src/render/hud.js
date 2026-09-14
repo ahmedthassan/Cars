@@ -1,5 +1,6 @@
 // ── HUD: bubbles, panic, roster, debug ───────────────────────────────────────
-import { DIALOGUE, DRIVER, ROBOTS } from '../config.js';
+import { DIALOGUE } from '../config.js';
+import { colorOf, nameOf } from '../roster.js';
 import { worldToScreen } from './draw.js';
 
 export function createHud() {
@@ -24,9 +25,6 @@ export function updateHud(hud, dt) {
   for (const b of hud.bubbles) b.age += dt;
   hud.bubbles = hud.bubbles.filter((b) => b.age < b.life);
 }
-
-const COLOR = Object.fromEntries([...ROBOTS, DRIVER].map((r) => [r.id, r.color]));
-const NAME = Object.fromEntries([...ROBOTS, DRIVER].map((r) => [r.id, r.name]));
 
 function anchorFor(truck, speaker) {
   if (speaker === 'driver') return truck.cab.position;
@@ -69,7 +67,7 @@ export function drawBubbles(ctx, cam, canvas, hud, truck) {
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, 9);
     ctx.fill();
-    ctx.strokeStyle = COLOR[b.speaker] || '#fff';
+    ctx.strokeStyle = colorOf(b.speaker);
     ctx.lineWidth = big ? 3 : 2;
     ctx.stroke();
     // Tail toward the speaker
@@ -81,9 +79,9 @@ export function drawBubbles(ctx, cam, canvas, hud, truck) {
     ctx.fillStyle = 'rgba(10,13,19,0.9)';
     ctx.fill();
 
-    ctx.fillStyle = COLOR[b.speaker] || '#fff';
+    ctx.fillStyle = colorOf(b.speaker);
     ctx.font = 'bold 9px system-ui, sans-serif';
-    ctx.fillText((NAME[b.speaker] || b.speaker).toUpperCase(), x + padX, y - 3);
+    ctx.fillText(nameOf(b.speaker).toUpperCase(), x + padX, y - 3);
     ctx.fillStyle = big ? '#ffe9e9' : '#eef4fa';
     ctx.font = `${font} system-ui, -apple-system, sans-serif`;
     lines.forEach((l, i) => ctx.fillText(l, x + padX, y + padY + lh * (i + 0.78)));
@@ -139,7 +137,7 @@ export function drawStatus(ctx, canvas, S, truck, memory, insets = null) {
   ctx.textAlign = 'right';
   ctx.font = 'bold 11px system-ui, sans-serif';
   const label = alive.length
-    ? alive.map((b) => (b.clinging ? `${b.robot.name}!` : b.robot.name)).join('  ')
+    ? alive.map((b) => (b.clinging ? `${nameOf(b.botId)}!` : nameOf(b.botId))).join('  ')
     : 'nobody left lol';
   ctx.fillStyle = alive.length ? '#dfe8f2' : '#e8736b';
   ctx.fillText(label, canvas.width - padR, padT + 16);

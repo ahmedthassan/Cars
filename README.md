@@ -131,6 +131,32 @@ terrain is doing, the bot dangling off the side of the truck is the more interes
 `clinger` speaker resolves to whoever is actually hanging, and `any` deliberately excludes them
 — a bot holding on by one arm is not also doing the commentary.
 
+### Name your friends
+
+Renaming is the distribution channel, not a settings screen. Tap **Name the crew** on the
+splash (or **Rename crew** on the end card), type the names of people you know, and the game
+puts them on the trailer — on the bot bodies, in the speech bubbles, in the dialogue's
+`{lastDeath}` tokens, and across the Incident Report. Dadbot is in the list too; naming the
+driver after someone specific is most of the joke.
+
+Names persist in `localStorage`, cap at 12 characters, and clearing a field restores the
+original rather than leaving a nameless bot on the truck.
+
+`src/roster.js` is the single runtime source of truth for this. It exists because `memory.js`
+and `hud.js` each used to build a `{id: name}` map once at import time — which goes stale the
+instant a name changes, showing the new name on the truck and the old one in the dialogue.
+
+### The Incident Report
+
+The end card is the thing you screenshot. Who left, in what order, the cause **named** ("Into
+The Void", "Honked Off On Purpose"), the altitude it happened at, and the line they actually
+said on the way out — pulled from the shuffle-bag at the moment it fired, not reconstructed
+afterwards. Plus the blame split, where Dadbot picks up a share for every single departure
+because he was driving, and a larger one when you honked somebody off on purpose.
+
+It lays out in two columns so it fits a landscape phone in one screenshot, and **Share report**
+hands the same thing to the native share sheet, or the clipboard where there isn't one.
+
 ### Memory
 
 `src/dialogue/memory.js` keeps a session log — who died in what order, blame, honks, flips —
@@ -201,13 +227,13 @@ Two things worth knowing if you re-tune the map:
 
 ## Next funny upgrades
 
-From the spec's build order. Steps 1-4 are done; what's left:
+From the spec's build order. Steps 1-5 are done; what's left:
 
-1. Rename the bots + Incident Report end card. Players type their friends' names, screenshot,
-   send. That is the distribution channel.
-2. Map 2: The School Run — proves the location template (one new hazard, one new premise, one
-   dialogue pack).
-3. Auto-clip export — rolling 6-second buffer, 9:16.
+1. Map 2: The School Run — proves the location template (one new hazard, one new premise, one
+   dialogue pack). Suburban street, speed bumps that launch the cargo, and the only map where
+   going *slow* is the skill.
+2. Auto-clip export — rolling 6-second buffer, 9:16.
+3. Named deaths as collectibles, the daily seed, fake-ad mode.
 
 Expand the line pools as you go: the spec's target is ~170 lines, and adding them is a pure
 data edit in `lines.js`.

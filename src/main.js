@@ -23,6 +23,9 @@ import {
   exitApp, haptic, impactHaptic, initPlatform, isNative, onAppActive,
   onBackButton, reacquireWakeLock, safeAreaInsets,
 } from './platform/native.js';
+import { renderCrew, resetCrew } from './ui/crew.js';
+import { renderReport, reportText, shareReport } from './ui/report.js';
+import { roster } from './roster.js';
 
 const Matter = window.Matter;
 const canvas = document.getElementById('game');
@@ -69,7 +72,7 @@ function newRun() {
   Matter.Composite.add(world, buildTerrainBodies(Matter, heightmap));
 
   const startX = 200;
-  const truck = createTruck(Matter, startX, groundY(heightmap, startX) - 80, ROBOTS);
+  const truck = createTruck(Matter, startX, groundY(heightmap, startX) - 80, roster());
   Matter.Composite.add(world, truck.composite);
   trackContacts(Matter, engine, truck);
 
@@ -124,7 +127,9 @@ function loseBot(b, cause, S) {
   game.sampler.panic = Math.min(1, game.sampler.panic + GAME.dropPanic);
   haptic('drop');
   markEvent(game.sampler, 'drop');
-  handleEvents(trigger(game.dialogue, 'drop', { botId: b.botId, cause }), S);
+  handleEvents(trigger(game.dialogue, 'drop', {
+    botId: b.botId, cause, altitude: S?.altitude ?? null, t: game.dialogue.t,
+  }), S);
   // Remove once well off screen so the physics stays cheap.
   setTimeout(() => Matter.Composite.remove(game.world, b), 3000);
 }
@@ -134,9 +139,9 @@ function checkBots(S) {
 
   // Grip first: anyone already hanging either climbs back or lets go.
   const { lost, recovered } = updateCling(Matter, game.world, truck, S, 1 / 60);
-  for (const id of lost) {
-    const b = truck.bots.find((x) => x.botId === id);
-    if (b) loseBot(b, 'losing their grip', S);
+  for (const { botId, cause } of lost) {
+    const b = truck.bots.find((x) => x.botId === botId);
+    if (b) loseBot(b, cause, S);
   }
   for (const id of recovered) {
     markEvent(game.sampler, 'save');
@@ -162,7 +167,7 @@ function checkBots(S) {
       handleEvents(trigger(dialogue, 'grab', { botId: b.botId }), S);
       continue;
     }
-    loseBot(b, below ? 'the void' : 'the road', S);
+    loseBot(b, below ? 'void' : 'road', S);
   }
 }
 
@@ -219,21 +224,58 @@ function checkEnd(S) {
 }
 
 function end(title, detail) {
-  haptic(title.startsWith('Summit') ? 'win' : 'heavy');
+  const won = title.startsWith('Summit');
+  haptic(won ? 'win' : 'heavy');
   // The splash can still be up if the run ended without a tap; it must not
   // show through the end card.
   document.getElementById('tapstart')?.setAttribute('hidden', '');
-  const crew = game.truck.bots.filter((b) => !b.lost).map((b) => b.botId);
-  closeRun(memory, crew);
-  game.over = { title, detail };
-  const card = document.getElementById('endcard');
-  document.getElementById('endtitle').textContent = title;
+  document.getElementById('pausecard').hidden = true;
+
+  const survivors = game.truck.bots.filter((b) => !b.lost).map((b) => b.botId);
+  closeRun(memory, survivors);
+  game.over = { title, detail, survivors };
+
+  const titleEl = document.getElementById('endtitle');
+  titleEl.textContent = title;
+  titleEl.classList.toggle('win', won);
   document.getElementById('enddetail').textContent = detail;
-  const order = memory.deaths.length
-    ? memory.deaths.map((id) => ROBOTS.find((r) => r.id === id).name).join(' → ')
-    : 'nobody, somehow';
-  document.getElementById('endorder').textContent = `Lost, in order: ${order}`;
-  card.hidden = false;
+  renderReport(document.getElementById('reportbody'), { memory, survivors });
+  document.getElementById('sharenote').textContent = '';
+  document.getElementById('endcard').hidden = false;
+}
+
+// ── Crew screen ──────────────────────────────────────────────────────────────
+function openCrew() {
+  // Pause the world, but hide the pause card while doing it — otherwise it
+  // shows through behind the crew sheet, which is two overlays deep and reads
+  // as a rendering bug.
+  if (game && !game.over) setPaused(true);
+  document.getElementById('pausecard').hidden = true;
+  renderCrew(document.getElementById('crewlist'), refreshNames);
+  document.getElementById('tapstart')?.setAttribute('hidden', '');
+  document.getElementById('crewcard').hidden = false;
+}
+
+function closeCrew() {
+  document.getElementById('crewcard').hidden = true;
+  // Renaming from the end card should drop you into a fresh run with the new
+  // names rather than back onto a finished one.
+  if (game?.over) restart();
+  else { document.getElementById('pausecard').hidden = true; setPaused(false); }
+  firstGesture();
+}
+
+/**
+ * Names are resolved live everywhere they are drawn, so a rename needs nothing
+ * more than a redraw — except the end card, which is static HTML already on
+ * screen and has to be rebuilt.
+ */
+function refreshNames() {
+  if (game?.over && !document.getElementById('endcard').hidden) {
+    renderReport(document.getElementById('reportbody'), {
+      memory, survivors: game.over.survivors || [],
+    });
+  }
 }
 
 // ── Input ─────────────────────────────────────────────────────────────────────
@@ -259,7 +301,7 @@ function doHonk() {
 
   // Honking at someone hanging off your own trailer costs them grip. That is
   // the sacrifice mechanic: shake them off and the truck gets lighter.
-  const shaken = shakeClingers(game.truck, PHYSICS.clingHonkCost);
+  const shaken = shakeClingers(game.truck, PHYSICS.clingHonkCost, true);
   if (shaken.length) {
     for (const id of shaken) memory.blame.driver = (memory.blame.driver || 0) + 1;
     handleEvents(trigger(game.dialogue, 'shaken', { botId: shaken[0] }), game.S || {});
@@ -296,6 +338,29 @@ bindHold('gas', 'gas');
 bindHold('brake', 'brake');
 document.getElementById('horn').addEventListener('pointerdown', (e) => { e.preventDefault(); doHonk(); });
 document.getElementById('again').addEventListener('click', restart);
+document.getElementById('crew').addEventListener('click', openCrew);
+document.getElementById('opencrew').addEventListener('click', (e) => {
+  e.stopPropagation();      // the splash's own tap handler would race this
+  openCrew();
+});
+document.getElementById('crewdone').addEventListener('click', closeCrew);
+document.getElementById('crewreset').addEventListener('click', () => {
+  resetCrew(document.getElementById('crewlist'), refreshNames);
+});
+document.getElementById('share').addEventListener('click', async () => {
+  const note = document.getElementById('sharenote');
+  const text = reportText({
+    memory,
+    survivors: game.over?.survivors || [],
+    title: game.over?.title || '',
+    detail: game.over?.detail || '',
+  });
+  const how = await shareReport(text);
+  note.textContent = how === 'copied' ? 'Report copied to clipboard.'
+    : how === 'shared' ? 'Shared.'
+    : how === 'cancelled' ? ''
+    : 'Could not share here — screenshot it instead.';
+});
 document.getElementById('resume').addEventListener('click', () => setPaused(false));
 document.getElementById('pauserestart').addEventListener('click', restart);
 document.getElementById('dbg').addEventListener('click', () => { hud.debug = !hud.debug; });
@@ -312,6 +377,7 @@ function restart() {
   document.getElementById('endcard').hidden = true;
   document.getElementById('pausecard').hidden = true;
   memory.deaths = [];
+  memory.incidents = [];
   memory.lastDeath = null;
   memory.blame = { driver: 0 };
   memory.flips = 0;
@@ -404,5 +470,15 @@ window.__haul = {
   honk: doHonk,
   restart,
   setPaused,
+  openCrew,
+  closeCrew,
   get native() { return isNative(); },
+  get report() {
+    return reportText({
+      memory,
+      survivors: game.over?.survivors || [],
+      title: game.over?.title || '',
+      detail: game.over?.detail || '',
+    });
+  },
 };
