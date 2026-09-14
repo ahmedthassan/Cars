@@ -1,0 +1,17 @@
+{
+  "name": "Robot Haul",
+  "short_name": "Robot Haul",
+  "description": "Dadbot drives. Four passenger bots ride on the trailer. They talk. They panic. They fall off. You honk.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#12161d",
+  "theme_color": "#12161d",
+  "categories": ["games"],
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

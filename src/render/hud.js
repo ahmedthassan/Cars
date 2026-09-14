@@ -104,26 +104,33 @@ function wrap(ctx, text, maxW) {
   return out;
 }
 
-export function drawStatus(ctx, canvas, S, truck, memory) {
+export function drawStatus(ctx, canvas, S, truck, memory, insets = null) {
+  // On a notched phone in landscape the notch sits over one edge and the home
+  // indicator over the bottom, so the HUD is inset by whatever the OS reports
+  // rather than by a fixed margin.
+  const i = insets || { top: 0, right: 0, bottom: 0, left: 0 };
   const pad = 12;
+  const padL = pad + i.left;
+  const padR = pad + i.right;
+  const padT = pad + i.top;
   // Panic meter
   const w = Math.min(230, canvas.width * 0.3);
   ctx.fillStyle = 'rgba(10,13,19,0.6)';
   ctx.beginPath();
-  ctx.roundRect(pad, pad, w, 44, 8);
+  ctx.roundRect(padL, padT, w, 44, 8);
   ctx.fill();
   ctx.fillStyle = '#9aa4b2';
   ctx.font = 'bold 10px system-ui, sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText(`PANIC ${Math.round(S.panic * 100)}%`, pad + 10, pad + 16);
+  ctx.fillText(`PANIC ${Math.round(S.panic * 100)}%`, padL + 10, padT + 16);
   ctx.fillStyle = 'rgba(255,255,255,0.13)';
   ctx.beginPath();
-  ctx.roundRect(pad + 10, pad + 24, w - 20, 9, 5);
+  ctx.roundRect(padL + 10, padT + 24, w - 20, 9, 5);
   ctx.fill();
   const hue = 140 - S.panic * 140;
   ctx.fillStyle = `hsl(${hue}, 78%, 55%)`;
   ctx.beginPath();
-  ctx.roundRect(pad + 10, pad + 24, Math.max(2, (w - 20) * S.panic), 9, 5);
+  ctx.roundRect(padL + 10, padT + 24, Math.max(2, (w - 20) * S.panic), 9, 5);
   ctx.fill();
 
   // Roster. Anyone dangling is marked, because "three aboard" and "two aboard
@@ -135,11 +142,11 @@ export function drawStatus(ctx, canvas, S, truck, memory) {
     ? alive.map((b) => (b.clinging ? `${b.robot.name}!` : b.robot.name)).join('  ')
     : 'nobody left lol';
   ctx.fillStyle = alive.length ? '#dfe8f2' : '#e8736b';
-  ctx.fillText(label, canvas.width - pad, pad + 16);
+  ctx.fillText(label, canvas.width - padR, padT + 16);
   ctx.fillStyle = '#8d97a5';
   ctx.font = '10px system-ui, sans-serif';
   ctx.fillText(`ALTITUDE ${Math.round(S.altitude * 100)}%   TILT ${S.tilt.toFixed(0)}°   HONKS ${memory.honks}`,
-    canvas.width - pad, pad + 32);
+    canvas.width - padR, padT + 32);
 
   // A dangling bot needs a loud, unmissable prompt. The player has a couple of
   // seconds to decide whether to steady up and haul them back or honk them off
@@ -152,10 +159,10 @@ export function drawStatus(ctx, canvas, S, truck, memory) {
     const w2 = ctx.measureText(msg).width;
     ctx.fillStyle = 'rgba(10,13,19,0.82)';
     ctx.beginPath();
-    ctx.roundRect(canvas.width / 2 - w2 / 2 - 12, pad + 42, w2 + 24, 24, 7);
+    ctx.roundRect(canvas.width / 2 - w2 / 2 - 12, padT + 42, w2 + 24, 24, 7);
     ctx.fill();
     ctx.fillStyle = '#ffd166';
-    ctx.fillText(msg, canvas.width / 2, pad + 58);
+    ctx.fillText(msg, canvas.width / 2, padT + 58);
   }
 }
 

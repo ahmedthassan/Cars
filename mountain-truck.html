@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#12161d">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Robot Haul">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
 <title>Robot Haul — The Mountain</title>
 <style>
   :root { color-scheme: dark; }
@@ -13,6 +19,10 @@
     margin: 0; height: 100%; overflow: hidden; background: #12161d;
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     touch-action: none; user-select: none; -webkit-user-select: none;
+    /* Stop iOS rubber-banding the whole page when you drag on the canvas, and
+       stop the pull-to-refresh gesture eating a downward swipe. */
+    overscroll-behavior: none; -webkit-overflow-scrolling: auto;
+    position: fixed; inset: 0; width: 100%;
   }
   #game { display: block; position: fixed; inset: 0; }
 
@@ -22,6 +32,11 @@
   }
   .pad.left  { left:  max(16px, env(safe-area-inset-left)); }
   .pad.right { right: max(16px, env(safe-area-inset-right)); }
+  button.ctl, #again, #pausecard button, #dbg {
+    /* Kills the 300ms tap delay and double-tap zoom without touching the
+       click event the card buttons rely on. */
+    touch-action: manipulation;
+  }
   button.ctl {
     min-width: 108px; height: 74px; border-radius: 18px; border: 2px solid rgba(255,255,255,0.22);
     background: rgba(16,20,28,0.72); color: #eef4fa; font: 700 15px/1 system-ui, sans-serif;
@@ -31,12 +46,16 @@
   #gas   { border-color: #6fcf7a; }
   #brake { border-color: #e8a34f; }
   #horn  { min-width: 84px; border-color: #7ec8f2; font-size: 22px; }
+  /* Developer affordance, not a feature. It ships (it is how you check that
+     every line had a physics reason) but it should not compete with the game. */
   #dbg {
-    position: fixed; top: max(12px, env(safe-area-inset-top)); right: 50%;
-    transform: translateX(50%); z-index: 5; height: 30px; padding: 0 12px;
-    border-radius: 9px; border: 1px solid rgba(255,255,255,0.18);
-    background: rgba(16,20,28,0.6); color: #9aa4b2; font: 600 10px/1 ui-monospace, monospace;
+    position: fixed; top: max(8px, env(safe-area-inset-top)); right: 50%;
+    transform: translateX(50%); z-index: 5; height: 22px; padding: 0 9px;
+    border-radius: 7px; border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(16,20,28,0.35); color: rgba(154,164,178,0.5);
+    font: 600 9px/1 ui-monospace, monospace; opacity: 0.55;
   }
+  #dbg:active { opacity: 1; }
 
   #tapstart {
     position: fixed; inset: 0; display: grid; place-content: center; gap: 10px;
@@ -53,6 +72,19 @@
     text-align: center; z-index: 12; background: rgba(8,11,16,0.88); padding: 24px;
   }
   #endcard[hidden] { display: none !important; }
+  #pausecard[hidden] { display: none !important; }
+  #pausecard {
+    position: fixed; inset: 0; display: grid; place-content: center; gap: 14px;
+    text-align: center; z-index: 11; background: rgba(8,11,16,0.84); padding: 24px;
+  }
+  #pausecard h2 { margin: 0; font: 800 clamp(22px, 6vw, 34px)/1.1 system-ui; color: #eef4fa; }
+  #pausecard p { margin: 0; color: #9aa4b2; font-size: 13px; }
+  #pausecard .row { display: flex; gap: 12px; justify-content: center; }
+  #pausecard button {
+    height: 44px; padding: 0 22px; border-radius: 12px; background: transparent;
+    color: #eef4fa; font: 700 14px system-ui; border: 2px solid #7ec8f2;
+  }
+  #pausecard button.ghost { border-color: rgba(255,255,255,0.28); color: #9aa4b2; }
   #endtitle { margin: 0; font: 800 clamp(24px, 7vw, 40px)/1.1 ui-monospace, monospace; color: #ff8a7a; }
   #enddetail { margin: 0; color: #dfe8f2; font-size: 14px; max-width: 36ch; }
   #endorder { margin: 0; color: #8d97a5; font-size: 12px; }
@@ -95,6 +127,15 @@
   <p style="color:#6f7986">Tap anywhere to start (and to allow sound).</p>
 </div>
 
+<div id="pausecard" hidden>
+  <h2>Paused</h2>
+  <p>The hill will wait. It is not going anywhere.</p>
+  <div class="row">
+    <button id="resume">Resume</button>
+    <button id="pauserestart" class="ghost">Restart</button>
+  </div>
+</div>
+
 <div id="endcard" hidden>
   <h2 id="endtitle"></h2>
   <p id="enddetail"></p>
@@ -114,6 +155,25 @@
     const s = document.getElementById('tapstart');
     if (s) s.hidden = true;
   });
+
+  // Offline support for the installed web app. Capacitor serves the same files
+  // from the app bundle, where a service worker is unnecessary — and on
+  // file:// it cannot register at all — so this is guarded rather than assumed.
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(() => {
+        /* first run offline, or served from a context that forbids workers */
+      });
+    });
+  }
+
+  // Pinch-zoom and long-press callouts, suppressed. Double-tap zoom is handled
+  // by `touch-action` in CSS rather than by cancelling touchend globally:
+  // cancelling touchend also suppresses the synthesized click event, which
+  // would quietly break every button that listens for one (Resume, Again,
+  // Restart) exactly when a player taps twice in a hurry.
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
 </script>
 </body>
 </html>

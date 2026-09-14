@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Robot Haul</string>
+    <string name="title_activity_main">Robot Haul</string>
+    <string name="package_name">com.robothaul.game</string>
+    <string name="custom_url_scheme">com.robothaul.game</string>
+</resources>

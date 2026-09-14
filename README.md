@@ -39,8 +39,30 @@ python3 -m http.server 5173
 Open `http://localhost:5173/mountain-truck.html`
 
 A server is required — the game is split into ES modules, which browsers refuse to load over
-`file://`. Matter.js is vendored in `vendor/`, so there is no network dependency and no npm
-install.
+`file://`. Matter.js is vendored in `vendor/`, so there is no network dependency.
+
+## Phones
+
+It ships three ways from this one source, with no bundler: as an installable offline PWA, and
+as native iOS and Android apps via Capacitor.
+
+```bash
+npm install
+npm run build     # assembles www/
+npm run apk       # debug Android APK
+npm run ios       # opens Xcode — macOS only
+```
+
+**See [MOBILE.md](MOBILE.md)** for the full path to both stores, including what has actually
+been verified and what has not. The short version: the Android APK compiles and has been
+inspected (4.8 MB, correct package, landscape locked, all assets inside) but has never been
+*run* — there is no device here. Nothing on the iOS side has been compiled at all, because
+Xcode does not exist on Linux; that first build happens on your Mac.
+
+`src/platform/native.js` is the only file that knows which target it is running on. Haptics,
+orientation lock, wake lock, safe-area insets, app lifecycle and the Android back button all
+live there, and every one of them degrades to silence rather than an error on a platform that
+lacks it.
 
 ## The dialogue engine
 
@@ -152,7 +174,7 @@ grabs on a level road climbs straight back and the scene never happens.
 ## Tests
 
 ```bash
-node --test test/dialogue.test.mjs
+npm test          # or: node --test test/dialogue.test.mjs
 ```
 
 The dialogue engine is pure functions over a plain state vector — no DOM, no Matter — so the
