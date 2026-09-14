@@ -20,6 +20,7 @@ function mkS(over = {}) {
     tilt: 0, tiltRate: 0, speed: 3, accel: 0, airTime: 0, wheelSlip: 0,
     gradient: 0, rollback: false, stalled: false, altitude: 0.3,
     voidDist: 4000, voidLengths: 14, crew: 4, panic: 0, lastEvent: null,
+    clinging: 0, clingGrip: 1, clingingIds: [],
     sinceLine: 99, sinceEvent: 99, grounded: true, gas: false,
     landing: false, landingAirTime: 0, x: 1000, summitX: 8900,
     ...over,
@@ -95,8 +96,9 @@ test('every band in the spec table is present with its stated priority', () => {
   const expected = {
     chill: 0, working: 1, slip: 3, stall: 3, rollback: 4, tilt_30: 2, tilt_45: 4,
     tilt_60: 5, air: 4, air_long: 5, near_void: 4, landing: 3, alone: 3, empty: 5, summit: 5,
+    cling: 5,   // not in the spec table: added with the clinging mechanic
   };
-  assert.equal(BANDS.length, 15);
+  assert.equal(BANDS.length, Object.keys(expected).length);
   for (const b of BANDS) assert.equal(b.priority, expected[b.id], `${b.id} priority`);
 });
 
@@ -325,6 +327,77 @@ test('Dadbot is allowed to lose it once the crew is gone', () => {
     'nobody spoke to the empty trailer');
 });
 
+// ── Clinging ─────────────────────────────────────────────────────────────────
+
+test('the cling band only opens while someone is actually hanging on', () => {
+  const st = createBandState();
+  assert.ok(!updateBands(st, mkS(), DT).includes('cling'));
+  assert.ok(updateBands(st, mkS({ clinging: 1, clingingIds: ['pip'] }), DT).includes('cling'));
+  assert.ok(!updateBands(st, mkS(), DT).includes('cling'), 'cling band latched after they let go');
+});
+
+test("the begging comes from the bot actually dangling, not one sitting down", () => {
+  const lines = [{
+    id: 'beg', speaker: 'clinger', band: 'cling', cooldown: 0.01, text: ['help'],
+  }];
+  const d = mkDialogue({ lines, rng: seq([0.5]) });
+  const said = linesOf(run(d, mkS({ clinging: 1, clingingIds: ['pip'] }), 6));
+  assert.ok(said.length > 0, 'the clinger never spoke');
+  for (const e of said) assert.equal(e.speaker, 'pip', 'someone else did the begging');
+});
+
+test("a bot hanging by one arm is not also doing the commentary", () => {
+  const lines = [{
+    id: 'crowd', speaker: 'any', band: 'cling', cooldown: 0.01, text: ['observation'],
+  }];
+  const d = mkDialogue({ lines, rng: seq([0.1, 0.4, 0.7, 0.95]) });
+  // Only pip and rusty are left, and pip is the one dangling.
+  const d2 = createDialogue({ lines, memory: createMemory(null), rng: seq([0.1, 0.9]), crew: ['pip', 'rusty'] });
+  const said = linesOf(run(d2, mkS({ crew: 2, clinging: 1, clingingIds: ['pip'] }), 12));
+  assert.ok(said.length > 0, 'nobody commented');
+  for (const e of said) {
+    assert.notEqual(e.speaker, 'pip', 'the dangling bot narrated its own predicament');
+  }
+});
+
+test('the desperate pool is gated on the grip actually running out', () => {
+  const lines = [
+    { id: 'calm', speaker: 'clinger', band: 'cling', cooldown: 0.01,
+      when: (S) => S.clingGrip > 0.45, text: ['steady'] },
+    { id: 'panic', speaker: 'clinger', band: 'cling', cooldown: 0.01,
+      when: (S) => S.clingGrip <= 0.45, text: ['slipping'] },
+  ];
+  const d = mkDialogue({ lines, crew: ['pip'] });
+  const strong = linesOf(run(d, mkS({ clinging: 1, clingingIds: ['pip'], clingGrip: 0.8 }), 6));
+  assert.ok(strong.every((e) => e.text === 'steady'), 'panicked at full grip');
+
+  const d2 = mkDialogue({ lines, crew: ['pip'] });
+  const weak = linesOf(run(d2, mkS({ clinging: 1, clingingIds: ['pip'], clingGrip: 0.2 }), 6));
+  assert.ok(weak.every((e) => e.text === 'slipping'), 'stayed calm on a failing grip');
+});
+
+test('honking someone off gets a last line and a Dadbot excuse', () => {
+  const d = mkDialogue({ rng: seq([0.5]) });
+  trigger(d, 'shaken', { botId: 'pip', S: mkS({ clingingIds: ['pip'] }) });
+  const said = linesOf(run(d, mkS({ crew: 3 }), DIALOGUE.dadReplyDelay + 1.5));
+  assert.equal(said[0]?.speaker, 'pip', 'the bot being shaken off said nothing');
+  assert.ok(said.some((e) => e.speaker === 'driver'),
+    'Dadbot had nothing to say about what he just did');
+});
+
+test('catching the edge and climbing back both get their own line', () => {
+  const d = mkDialogue({ rng: seq([0.5]) });
+  trigger(d, 'grab', { botId: 'rusty', S: mkS({ clingingIds: ['rusty'] }) });
+  const grab = linesOf(run(d, mkS({ clinging: 1, clingingIds: ['rusty'] }), 1.5));
+  assert.equal(grab[0]?.speaker, 'rusty');
+  assert.equal(grab[0]?.band, 'grab');
+
+  d.t += 30;
+  trigger(d, 'save', { botId: 'rusty', S: mkS() });
+  const save = linesOf(run(d, mkS(), 1.5));
+  assert.ok(save.length >= 1, 'climbing back aboard passed without comment');
+});
+
 // ── Memory ───────────────────────────────────────────────────────────────────
 
 test('past enough honks, one bot answers the horn with silence', () => {
@@ -337,7 +410,11 @@ test('past enough honks, one bot answers the horn with silence', () => {
   const speakers = new Set();
   for (let i = 0; i < 40; i++) {
     d.t += 10; // clear cooldowns between honks
-    for (const e of trigger(d, 'honk')) if (e.kind === 'line') speakers.add(e.speaker);
+    trigger(d, 'honk', { S: mkS() });
+    // Only the honk reactions matter here — the bands fire their own lines too.
+    for (const e of run(d, mkS(), 1.4)) {
+      if (e.kind === 'line' && e.band === 'honk') speakers.add(e.speaker);
+    }
   }
   const deaf = 'clank'; // deterministic: honks % pool length
   assert.ok(!speakers.has(deaf), `${deaf} should have stopped responding to the horn`);
@@ -346,14 +423,27 @@ test('past enough honks, one bot answers the horn with silence', () => {
 
 test('a bot leaving gets a last line, then Dadbot says something unhelpful', () => {
   const d = mkDialogue({ rng: seq([0.5]) });
-  const events = trigger(d, 'drop', { botId: 'pip' });
-  const last = linesOf(events);
-  assert.equal(last.length, 1);
-  assert.equal(last[0].speaker, 'pip');
+  trigger(d, 'drop', { botId: 'pip' });
+  const said = linesOf(run(d, mkS({ crew: 3 }), DIALOGUE.dadReplyDelay + 2));
+  assert.equal(said[0]?.speaker, 'pip', 'the departing bot got no last line');
+  assert.ok(said.some((e) => e.speaker === 'driver'), 'Dadbot said nothing about it');
+});
 
-  // Dad's reply is queued, not immediate — it needs the beat.
-  const soon = linesOf(run(d, mkS({ crew: 3 }), DIALOGUE.dadReplyDelay + 0.5));
-  assert.ok(soon.some((e) => e.speaker === 'driver'), 'Dadbot said nothing about it');
+test('a pile-up of forced events still respects the 1.1s spacing', () => {
+  // Regression: four bots coming off inside a second used to emit four lines
+  // on the same frame, which reads as noise rather than as a scene.
+  const d = mkDialogue({ rng: seq([0.5]) });
+  for (const id of ['clank', 'beep', 'rusty', 'pip']) {
+    trigger(d, 'drop', { botId: id });
+  }
+  const said = linesOf(run(d, mkS({ crew: 0 }), 20));
+  const deaths = said.filter((e) => e.band === 'drop' && e.speaker !== 'driver');
+  assert.equal(deaths.length, 4, 'not every bot got a last line');
+  for (let i = 1; i < deaths.length; i++) {
+    const gap = deaths[i].at - deaths[i - 1].at;
+    assert.ok(gap >= DIALOGUE.globalCooldown - 1e-6,
+      `two last lines only ${gap.toFixed(2)}s apart`);
+  }
 });
 
 test('memory tokens are interpolated into the text that reaches the screen', () => {

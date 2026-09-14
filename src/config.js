@@ -75,6 +75,24 @@ export const PHYSICS = {
 
   honkForce: -0.0012,     // upward nudge per bot. Raise to yeet on purpose.
 
+  // ── Clinging ───────────────────────────────────────────────────────────────
+  // A bot coming off the trailer gets one chance to catch the edge and dangle
+  // by an arm. This is the difference between "a bot fell off" and a scene.
+  clingChance:   0.72,    // odds of catching the edge at all
+  clingArm:      26,      // px — how long the arm is
+  // Grip STARTS below clingBackAt on purpose. Starting at full grip meant a
+  // bot that caught the edge while the truck happened to be level climbed
+  // straight back on the next frame, and the whole scene never happened.
+  clingGrip:     0.62,    // starts here, drains to 0 and then they are gone
+  clingDrain:    0.115,   // per sec, baseline
+  clingTiltDrain: 0.9,    // per sec extra, scaled by how silly the angle is
+  clingSlamDrain: 0.055,  // per unit of impact
+  clingHonkCost: 0.34,    // per honk. This is the sacrifice mechanic.
+  clingRecover:  0.16,    // per sec of calm, steady driving (~2s to get back up)
+  clingBackAt:   0.92,    // grip at which they haul themselves back aboard
+  clingCalmTilt: 22,      // deg — steadier than this counts as calm
+  clingCalmAccel: 9,
+
   // Wheel suspension stiffness (Matter constraint)
   suspension: 0.92,
 };
@@ -141,6 +159,7 @@ export const GAME = {
   panicTiltRate:  0.9,     // per sec at extreme tilt
   panicDecay:     0.12,    // per sec when calm
   dropPanic:      0.22,    // instant panic bump when a bot leaves
+  clingPanic:     0.5,     // panic floor while anyone is dangling
   winCrew:        2,       // summit with at least this many aboard
   flipAngle:      95,      // deg — past here you are on your roof
 

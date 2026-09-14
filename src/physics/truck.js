@@ -208,6 +208,110 @@ export function honk(Matter, truck) {
   }
 }
 
+// ── Clinging ─────────────────────────────────────────────────────────────────
+// A bot that comes off the trailer gets one chance to catch the edge and hang
+// there by an arm. Everything below exists so that "a bot fell off" becomes a
+// situation the player has to make a decision about.
+
+/** Where on the trailer this bot would grab, in the trailer's local frame. */
+function grabPoint(truck, bot) {
+  const t = truck.trailer;
+  const dx = bot.position.x - t.position.x;
+  const dy = bot.position.y - t.position.y;
+  const a = -t.angle;
+  const localX = dx * Math.cos(a) - dy * Math.sin(a);
+  const end = localX >= 0 ? 1 : -1;          // whichever end they were nearest
+  return { x: end * (PHYSICS.trailer.w / 2 - 3), y: -PHYSICS.lip.h };
+}
+
+/**
+ * Grab the edge. The constraint is deliberately soft and slightly longer than
+ * the arm, so the bot swings and drags rather than hanging rigidly off a peg.
+ */
+export function startCling(Matter, world, truck, bot) {
+  const { Constraint, Composite } = Matter;
+  bot.clinging = true;
+  bot.grip = PHYSICS.clingGrip;
+  bot.grabbedAt = grabPoint(truck, bot);
+  bot.clingArm = Constraint.create({
+    bodyA: truck.trailer,
+    pointA: bot.grabbedAt,
+    bodyB: bot,
+    pointB: { x: 0, y: -12 },                // their shoulder, not their middle
+    length: PHYSICS.clingArm,
+    stiffness: 0.55,
+    damping: 0.12,
+    render: { visible: false },
+  });
+  Composite.add(world, bot.clingArm);
+}
+
+function releaseCling(Matter, world, bot) {
+  if (bot.clingArm) Matter.Composite.remove(world, bot.clingArm);
+  bot.clingArm = null;
+  bot.clinging = false;
+}
+
+/** Shake every clinger. This is the sacrifice mechanic, and it is not subtle. */
+export function shakeClingers(truck, cost) {
+  const shaken = [];
+  for (const b of truck.bots) {
+    if (!b.clinging || b.lost) continue;
+    b.grip -= cost;
+    shaken.push(b.botId);
+  }
+  return shaken;
+}
+
+/**
+ * Drain and recover grip. Returns what happened this frame so the caller can
+ * fire dialogue: bots who lost their hold, and bots who climbed back aboard.
+ *
+ * Grip drains faster the sillier the angle gets, and recovers only while the
+ * truck is genuinely steady — which is what makes stopping to save someone an
+ * actual decision rather than a free action.
+ */
+export function updateCling(Matter, world, truck, S, dt) {
+  const P = PHYSICS;
+  const lost = [];
+  const recovered = [];
+
+  for (const b of truck.bots) {
+    if (!b.clinging || b.lost) continue;
+
+    const tiltLoad = Math.min(1, Math.max(0, (Math.abs(S.tilt) - 14) / 46));
+    const calm = Math.abs(S.tilt) < P.clingCalmTilt
+      && Math.abs(S.accel) < P.clingCalmAccel
+      && S.grounded;
+
+    b.grip += calm
+      ? P.clingRecover * dt
+      : -(P.clingDrain + P.clingTiltDrain * tiltLoad) * dt;
+    b.grip = Math.min(1, b.grip);
+
+    if (b.grip <= 0) {
+      releaseCling(Matter, world, b);
+      lost.push(b.botId);
+    } else if (b.grip >= P.clingBackAt) {
+      // Hauled themselves back on. Put them on the bed rather than leaving them
+      // hanging at full grip forever.
+      releaseCling(Matter, world, b);
+      const t = truck.trailer;
+      Matter.Body.setPosition(b, {
+        x: t.position.x - Math.sin(t.angle) * 30,
+        y: t.position.y - Math.cos(t.angle) * 30,
+      });
+      Matter.Body.setVelocity(b, t.velocity);
+      recovered.push(b.botId);
+    }
+  }
+  return { lost, recovered };
+}
+
+export function clingers(truck) {
+  return truck.bots.filter((b) => b.clinging && !b.lost);
+}
+
 /** Signed tilt in degrees. Positive = nose up. */
 export function tiltDegrees(truck) {
   return (-truck.cab.angle * 180) / Math.PI;

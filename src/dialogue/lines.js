@@ -322,6 +322,138 @@ export const LINES = [
     ],
   },
 
+  // ── CLINGING ──────────────────────────────────────────────────────────────
+  // Speaker 'clinger' resolves to whoever is actually hanging off the trailer.
+  // Speaker 'any' deliberately excludes them: the bot dangling by one arm is
+  // not also doing the commentary.
+
+  // The moment of catching the edge.
+  {
+    id: 'grab_any', speaker: 'clinger', event: 'grab', priority: 5, cooldown: 4,
+    text: [
+      'GOT IT. GOT IT! I have got it. I have got one thing.',
+      'I am holding the truck. The truck is not holding me. This is worse.',
+      'Do not speed up. DO NOT SPEED UP.',
+      'Everyone stay calm, I am fine, I am OUTSIDE, but I am fine.',
+    ],
+  },
+  {
+    id: 'grab_clank', speaker: 'clank', event: 'grab', priority: 5, cooldown: 4,
+    text: [
+      'Grip strength: adequate. Duration: not adequate.',
+      'I have recalculated from out here. It is worse from out here.',
+    ],
+  },
+  {
+    id: 'grab_pip', speaker: 'pip', event: 'grab', priority: 5, cooldown: 4,
+    text: [
+      'SMALL ROBOT! SMALL ROBOT ON THE OUTSIDE!',
+      'My arm is doing all of this. My arm did not agree to this.',
+    ],
+  },
+  {
+    id: 'grab_rusty', speaker: 'rusty', event: 'grab', priority: 5, cooldown: 4,
+    text: [
+      'Been here before. Different truck. Same idiot.',
+      'Well. This is the view, then.',
+    ],
+  },
+  {
+    id: 'grab_beep', speaker: 'beep', event: 'grab', priority: 5, cooldown: 4,
+    text: [
+      'I AM BRAVE I AM BRAVE I AM BRAVE PLEASE STOP THE TRUCK',
+      'GRIP.EXE RUNNING — GRIP.EXE RUNNING — GRIP.EXE NOT RESPONDING—',
+    ],
+  },
+
+  // Hanging on. Escalates as the grip drains.
+  {
+    id: 'cling_beg', speaker: 'clinger', band: 'cling', cooldown: 6, tags: ['panic'],
+    when: (S) => S.clingGrip > 0.45,
+    text: [
+      'Steady. STEADY. Just drive like a normal vehicle for nine seconds.',
+      'I can get back up. I can get back up if you STOP DOING THAT.',
+      'Slow. Down. I am saying it slowly so it gets through.',
+      'Flat road. All I want. One flat road and one calm man.',
+    ],
+  },
+  {
+    id: 'cling_desperate', speaker: 'clinger', band: 'cling', cooldown: 5, tags: ['panic'],
+    when: (S) => S.clingGrip <= 0.45,
+    text: [
+      'Slipping. SLIPPING. That is the word, that is the whole word—',
+      'Fingers. Two of them. Then one. Then a story you tell.',
+      "I'm going. Tell {firstDeath} I tried harder than they did.",
+      'DAD. DAD. LOOK OUT THE WINDOW. THE OTHER WINDOW.',
+    ],
+  },
+  {
+    id: 'cling_crowd', speaker: 'any', band: 'cling', cooldown: 8,
+    text: [
+      "Someone's hanging off the back, Dad. Just so that's been said out loud.",
+      'Do we help? Is helping a thing we do?',
+      'I am not reaching out there. I have seen what is out there.',
+      "We're one bot lighter already, spiritually.",
+    ],
+  },
+  {
+    id: 'cling_clank_math', speaker: 'clank', band: 'cling', cooldown: 12,
+    when: (S) => !S.clingingIds?.includes('clank'),
+    text: [
+      'Grip failure in approximately eleven seconds. Approximately. I am being kind.',
+      'Probability they make it back: 34%. Probability Dad notices: lower.',
+    ],
+  },
+  {
+    id: 'cling_dad', speaker: 'driver', band: 'cling', cooldown: 14,
+    text: [
+      'Who is that at the window.',
+      "There's a lad on the side of the truck. Good for him.",
+      'Everyone stay in your seats. That includes whoever that is.',
+      "I'm not stopping on a hill. He knows that. He knows the rule.",
+    ],
+  },
+
+  // Hauled themselves back on.
+  {
+    id: 'save_any', speaker: 'any', event: 'save', priority: 4, cooldown: 3,
+    text: [
+      "I'm back. I'm back in. Nobody talk to me.",
+      'That was the worst thing that has ever happened and it is not close.',
+      'Thank you. Genuinely. That was almost driving.',
+      'I would like a different truck. And a different Dad. And a bed.',
+    ],
+  },
+  {
+    id: 'save_rusty', speaker: 'rusty', event: 'save', priority: 4, cooldown: 3,
+    text: [
+      'Hm. Still here.',
+      "Don't make a thing of it.",
+    ],
+  },
+
+  // Shaken off ON PURPOSE. The horn did this.
+  {
+    id: 'shaken_any', speaker: 'clinger', event: 'shaken', priority: 5, cooldown: 2,
+    text: [
+      'YOU HONKED. I WAS HANGING THERE AND YOU HONK—',
+      'That was on purpose. THAT WAS ON PURP—',
+      'I saw your hand move. I SAW YOUR HAN—',
+      'Not the horn. Anything but the— not the HOR—',
+    ],
+  },
+  {
+    id: 'dad_shake', speaker: 'driver', reply: true, cooldown: 0,
+    text: [
+      'Lighter now.',
+      'He was slowing us down.',
+      'I had to. For the others. For the mission.',
+      'Hand slipped. On the horn. Twice.',
+      "That's aerodynamics, that is.",
+      "We're making better time already.",
+    ],
+  },
+
   // ── Honk reactions (event) ────────────────────────────────────────────────
   // Past DIALOGUE.honkDesensitiseAt one bot stops responding entirely — the
   // engine returns no line at all for them. Silence is the punchline.

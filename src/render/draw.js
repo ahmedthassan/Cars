@@ -178,6 +178,45 @@ export function drawTruck(ctx, cam, canvas, truck) {
 
 export function drawBots(ctx, cam, canvas, truck) {
   begin(ctx, cam, canvas);
+
+  // Arms first, so a dangling bot is drawn on top of its own arm.
+  for (const b of truck.bots) {
+    if (b.lost || !b.clinging || !b.grabbedAt) continue;
+    const t = truck.trailer;
+    const ca = Math.cos(t.angle), sa = Math.sin(t.angle);
+    const gx = t.position.x + b.grabbedAt.x * ca - b.grabbedAt.y * sa;
+    const gy = t.position.y + b.grabbedAt.x * sa + b.grabbedAt.y * ca;
+    const sx = b.position.x + Math.sin(b.angle) * 12;
+    const sy = b.position.y - Math.cos(b.angle) * 12;
+
+    // The arm. It goes red as the grip runs out, which is the only warning the
+    // player gets that someone is about to stop being a passenger.
+    const grip = Math.max(0, Math.min(1, b.grip ?? 1));
+    ctx.strokeStyle = `hsl(${grip * 95}, 85%, ${52 + (1 - grip) * 10}%)`;
+    ctx.lineWidth = 4.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(gx, gy);
+    ctx.lineTo(sx, sy);
+    ctx.stroke();
+    // The hand
+    ctx.fillStyle = b.robot.color;
+    ctx.beginPath();
+    ctx.arc(gx, gy, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Grip meter, floating above the hand.
+    const bw = 30;
+    ctx.fillStyle = 'rgba(8,11,16,0.7)';
+    ctx.beginPath();
+    ctx.roundRect(gx - bw / 2, gy - 20, bw, 5, 2.5);
+    ctx.fill();
+    ctx.fillStyle = `hsl(${grip * 95}, 85%, 55%)`;
+    ctx.beginPath();
+    ctx.roundRect(gx - bw / 2, gy - 20, Math.max(1.5, bw * grip), 5, 2.5);
+    ctx.fill();
+  }
+
   for (const b of truck.bots) {
     if (b.lost) continue;
     const r = b.robot;

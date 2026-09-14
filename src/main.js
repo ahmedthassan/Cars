@@ -3,7 +3,8 @@ import { DIALOGUE, DRIVER, GAME, PHYSICS, ROBOTS, TERRAIN } from './config.js';
 import { createWorld } from './physics/world.js';
 import { buildHeightmap, buildTerrainBodies, groundY } from './physics/terrain.js';
 import {
-  applyDrive, createTruck, honk, isFlipped, stabiliseInAir, tiltDegrees, trackContacts,
+  applyDrive, createTruck, honk, isFlipped, shakeClingers, stabiliseInAir,
+  startCling, tiltDegrees, trackContacts, updateCling,
 } from './physics/truck.js';
 import { clearLanding, createSampler, markEvent, noteLine, sample } from './state/vector.js';
 import { createDialogue, trigger, update as stepDialogue } from './dialogue/engine.js';
@@ -68,7 +69,13 @@ function newRun() {
       const other = p.bodyA.label === 'ground' ? p.bodyB : p.bodyA.label === 'ground' ? p.bodyA : null;
       if (!other) continue;
       const v = Math.hypot(other.velocity.x, other.velocity.y);
-      if (v > 4) { impactSound(Math.min(1, v / 16)); game.camera.shake = Math.min(1, v / 22); }
+      if (v > 4) {
+        impactSound(Math.min(1, v / 16));
+        game.camera.shake = Math.min(1, v / 22);
+        // A hard landing costs anyone hanging on. Slamming down on someone's
+        // fingers should not be free.
+        shakeClingers(game.truck, PHYSICS.clingSlamDrain * v);
+      }
     }
   });
 
@@ -98,24 +105,50 @@ function handleEvents(events, S) {
   }
 }
 
+function loseBot(b, cause, S) {
+  b.lost = true;
+  b.aboard = false;
+  b.clinging = false;
+  game.sampler.panic = Math.min(1, game.sampler.panic + GAME.dropPanic);
+  markEvent(game.sampler, 'drop');
+  handleEvents(trigger(game.dialogue, 'drop', { botId: b.botId, cause }), S);
+  // Remove once well off screen so the physics stays cheap.
+  setTimeout(() => Matter.Composite.remove(game.world, b), 3000);
+}
+
 function checkBots(S) {
   const { truck, dialogue } = game;
+
+  // Grip first: anyone already hanging either climbs back or lets go.
+  const { lost, recovered } = updateCling(Matter, game.world, truck, S, 1 / 60);
+  for (const id of lost) {
+    const b = truck.bots.find((x) => x.botId === id);
+    if (b) loseBot(b, 'losing their grip', S);
+  }
+  for (const id of recovered) {
+    markEvent(game.sampler, 'save');
+    handleEvents(trigger(dialogue, 'save', { botId: id }), S);
+  }
+
   for (const b of truck.bots) {
-    if (b.lost) continue;
+    if (b.lost || b.clinging) continue;
     const dx = b.position.x - truck.trailer.position.x;
     const dy = b.position.y - truck.trailer.position.y;
-    const far = Math.hypot(dx, dy) > 240;
+    const dist = Math.hypot(dx, dy);
+    const far = dist > 240;
     const below = b.position.y > truck.cab.position.y + 260;
     if (!far && !below) continue;
 
-    b.lost = true;
-    b.aboard = false;
-    const cause = below ? 'the void' : 'the road';
-    game.sampler.panic = Math.min(1, game.sampler.panic + GAME.dropPanic);
-    markEvent(game.sampler, 'drop');
-    handleEvents(trigger(dialogue, 'drop', { botId: b.botId, cause }), S);
-    // Remove once well off screen so the physics stays cheap.
-    setTimeout(() => Matter.Composite.remove(game.world, b), 3000);
+    // One chance to catch the edge. Falling straight down past the trailer is
+    // already too far gone to grab anything.
+    const catchable = dist < 330 && b.position.y < truck.cab.position.y + 300;
+    if (catchable && Math.random() < PHYSICS.clingChance) {
+      startCling(Matter, game.world, truck, b);
+      markEvent(game.sampler, 'grab');
+      handleEvents(trigger(dialogue, 'grab', { botId: b.botId }), S);
+      continue;
+    }
+    loseBot(b, below ? 'the void' : 'the road', S);
   }
 }
 
@@ -202,7 +235,16 @@ function doHonk() {
   honk(Matter, game.truck);
   honkSound();
   markEvent(game.sampler, 'honk');
-  handleEvents(trigger(game.dialogue, 'honk'), game.S || {});
+
+  // Honking at someone hanging off your own trailer costs them grip. That is
+  // the sacrifice mechanic: shake them off and the truck gets lighter.
+  const shaken = shakeClingers(game.truck, PHYSICS.clingHonkCost);
+  if (shaken.length) {
+    for (const id of shaken) memory.blame.driver = (memory.blame.driver || 0) + 1;
+    handleEvents(trigger(game.dialogue, 'shaken', { botId: shaken[0] }), game.S || {});
+  } else {
+    handleEvents(trigger(game.dialogue, 'honk'), game.S || {});
+  }
 }
 
 addEventListener('keydown', (e) => {

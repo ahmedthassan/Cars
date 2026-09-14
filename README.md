@@ -65,6 +65,7 @@ bands**, and a line can only exist inside a band:
 | `tilt_45` | tilt 45–58° | 4 | measured terror |
 | `air` | airTime > 0.35s | 4 | scream |
 | `near_void` | within 1.5 truck lengths of the drop | 4 | one bot names it |
+| `cling` | someone is hanging off the side | 5 | one arm, no plan, live commentary |
 | `tilt_60` | tilt > 58° | 5 | goodbye |
 | `air_long` | airTime > 1.1s | 5 | existential, calm, funniest tier |
 | `empty` | crew = 0 | 5 | Dadbot talks to nobody |
@@ -88,6 +89,25 @@ so where a line sits in the file has no effect on behaviour.
 - **Dadbot never panics until the crew is gone.** The gap between their terror and his calm is
   the joke, so the engine hard-blocks him from every panic pool while anyone is still aboard —
   it is not left to line-writing discipline.
+
+### Clinging, and the sacrifice
+
+A bot that comes off the trailer doesn't just vanish. It gets one chance to catch the edge and
+hang there by an arm, and then you have a few seconds to decide what kind of driver you are.
+
+- **Grip** starts part-full and drains faster the sillier the angle gets. The arm goes from
+  green to red as it runs out; that colour is the only warning you get.
+- **Drive steady** — low tilt, no slamming, wheels down — and grip recovers until they haul
+  themselves back aboard. Steady driving costs you momentum, which is the whole point.
+- **Honk** and they lose their grip. That is the **sacrifice mechanic**: cargo is mass, so
+  shedding it genuinely makes the truck faster. Measured on the same seeded map at the same
+  throttle: 4 bots aboard tops out at 8.2, two at 8.4, an empty truck at 9.2. An empty truck is
+  also a lost run, so the incentive is to shed *some* of your friends, not all of them.
+
+Dialogue-wise this is its own band at emergency priority, above the tilt bands: whatever the
+terrain is doing, the bot dangling off the side of the truck is the more interesting fact. The
+`clinger` speaker resolves to whoever is actually hanging, and `any` deliberately excludes them
+— a bot holding on by one arm is not also doing the commentary.
 
 ### Memory
 
@@ -124,6 +144,11 @@ fails if you add one.
 **Harder to tip** — `PHYSICS.ballastShare` is the fraction of cab mass slung low at
 `comDrop`. It, not `comDrop` alone, is what sets the tipping threshold.
 
+**Crueller clinging** — `PHYSICS.clingChance` is the odds of catching the edge at all;
+`clingDrain` and `clingTiltDrain` are how fast the hand slips; `clingHonkCost` is how much of
+someone's grip one honk costs you. `clingGrip` must stay *below* `clingBackAt` or a bot that
+grabs on a level road climbs straight back and the scene never happens.
+
 ## Tests
 
 ```bash
@@ -154,15 +179,13 @@ Two things worth knowing if you re-tune the map:
 
 ## Next funny upgrades
 
-From the spec's build order, in order:
+From the spec's build order. Steps 1-4 are done; what's left:
 
-1. Clinging animation — a bot dangling by one arm beats any written joke.
-2. Sacrifice mechanic — dropping a bot makes the truck lighter and faster.
-3. Rename the bots + Incident Report end card. Players type their friends' names, screenshot,
+1. Rename the bots + Incident Report end card. Players type their friends' names, screenshot,
    send. That is the distribution channel.
-4. Map 2: The School Run — proves the location template (one new hazard, one new premise, one
+2. Map 2: The School Run — proves the location template (one new hazard, one new premise, one
    dialogue pack).
-5. Auto-clip export — rolling 6-second buffer, 9:16.
+3. Auto-clip export — rolling 6-second buffer, 9:16.
 
 Expand the line pools as you go: the spec's target is ~170 lines, and adding them is a pure
 data edit in `lines.js`.

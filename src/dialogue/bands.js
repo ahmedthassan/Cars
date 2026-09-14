@@ -75,6 +75,13 @@ export const BANDS = [
     value: (S) => S.voidLengths, enter: 1.5, dir: 'below', hysteresis: 0.5,
   },
   {
+    // Someone is hanging off the side by one arm. This outranks the angle
+    // bands on purpose: whatever the truck is doing, the bot dangling from it
+    // is the more interesting fact.
+    id: 'cling', priority: 5, feel: 'one arm, no plan, live commentary',
+    test: (S) => S.clinging > 0,
+  },
+  {
     id: 'landing', priority: 3, feel: 'callback to what they said mid-air',
     test: (S) => S.landing,
   },

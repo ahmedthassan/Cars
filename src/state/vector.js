@@ -5,7 +5,7 @@
 // testable headlessly.
 
 import { DIALOGUE, GAME, PHYSICS, TERRAIN } from '../config.js';
-import { forwardSpeed, groundedWheels, tiltDegrees, wheelSlip } from '../physics/truck.js';
+import { clingers, forwardSpeed, groundedWheels, tiltDegrees, wheelSlip } from '../physics/truck.js';
 import { altitudeAt, gradientAt, voidDistance } from '../physics/terrain.js';
 
 const TRUCK_LENGTH = PHYSICS.cab.w + PHYSICS.trailer.w + PHYSICS.hitch.gap;
@@ -72,6 +72,10 @@ export function sample(sampler, { truck, heightmap, input, crew, dt }) {
   const stalled = sampler.gasHeld > GAME.stallTime && Math.abs(speed) < GAME.stallSpeed;
   const rollback = input.gas && speed < -0.5;
 
+  // Someone dangling off the side keeps the panic meter pinned high no matter
+  // how smoothly you are driving. It should.
+  const hanging = clingers(truck);
+
   // Panic climbs when you floor it and when the angle gets silly, decays when
   // nothing is happening.
   const tiltLoad = Math.min(1, Math.max(0, (Math.abs(tilt) - 25) / 35));
@@ -81,6 +85,7 @@ export function sample(sampler, { truck, heightmap, input, crew, dt }) {
     + (slip > 0.55 ? 0.25 * dt : 0)
     - GAME.panicDecay * dt;
   sampler.panic = Math.min(1, Math.max(0, panic));
+  if (hanging.length) sampler.panic = Math.max(sampler.panic, GAME.clingPanic);
 
   sampler.sinceLine += dt;
   sampler.sinceEvent += dt;
@@ -106,6 +111,11 @@ export function sample(sampler, { truck, heightmap, input, crew, dt }) {
     voidDist: vd,
     voidLengths: vd / TRUCK_LENGTH,
     crew,
+    clinging: hanging.length,
+    // Worst grip on the truck, 1 = solid, 0 = gone. Drives the cling band's
+    // escalation so the lines get worse as the hand slips.
+    clingGrip: hanging.length ? Math.min(...hanging.map((b) => b.grip)) : 1,
+    clingingIds: hanging.map((b) => b.botId),
     panic: sampler.panic,
     lastEvent: sampler.lastEvent,
     sinceLine: sampler.sinceLine,

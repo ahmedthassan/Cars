@@ -39,6 +39,7 @@ export function createDialogue({ lines, memory, rng = Math.random, crew = [] }) 
     bags: {},
     used: new Set(),       // `once` lines
     queue: [],             // delayed utterances (Dadbot replies, held punchlines)
+    forced: [],            // FIFO of event lines waiting for a free slot
     livingCrew: new Set(crew),
     airCallback: null,     // what was said mid-air, for the landing to answer
     activeBands: [],
@@ -66,11 +67,24 @@ function pickWeighted(candidates, rng) {
   return candidates[candidates.length - 1];
 }
 
-function resolveSpeaker(d, line) {
+function resolveSpeaker(d, line, S) {
+  // 'clinger' resolves to whoever is actually hanging off the trailer, so the
+  // begging comes from the bot with its hand on the edge rather than from
+  // somebody sitting comfortably on the bed.
+  if (line.speaker === 'clinger') {
+    const hanging = (S?.clingingIds ?? []).filter((id) => d.livingCrew.has(id));
+    if (!hanging.length) return null;
+    return hanging[Math.floor(d.rng() * hanging.length)];
+  }
   if (line.speaker === 'any' || line.speaker === 'crowd') {
     const alive = [...d.livingCrew];
-    if (!alive.length) return null;
-    return alive[Math.floor(d.rng() * alive.length)];
+    // The one dangling by an arm is not making small talk.
+    const pool = line.speaker === 'any'
+      ? alive.filter((id) => !(S?.clingingIds ?? []).includes(id))
+      : alive;
+    const use = pool.length ? pool : alive;
+    if (!use.length) return null;
+    return use[Math.floor(d.rng() * use.length)];
   }
   return line.speaker;
 }
@@ -107,7 +121,7 @@ function eligible(d, S) {
     // here in code rather than trusted to line-writing discipline.
     if (line.speaker === 'driver' && line.tags?.includes('panic') && S.crew > 0) continue;
 
-    const speaker = resolveSpeaker(d, line);
+    const speaker = resolveSpeaker(d, line, S);
     if (!speakerAvailable(d, speaker)) continue;
 
     out.push({ line, speaker, priority: priorityOf(line), weight: line.weight ?? 1 });
@@ -185,6 +199,10 @@ export function update(d, S, dt) {
     events.push({ kind: 'duck', amount: 1 });
   }
 
+  // Event lines take the next slot ahead of any band line: a bot leaving the
+  // truck matters more than whatever the terrain is doing.
+  if (drainForced(d, events)) return events;
+
   if (d.t < d.muteUntil) return events;   // holding silence before a punchline
   if (d.t < d.nextGlobal) return events;  // global cooldown
 
@@ -243,8 +261,42 @@ function queueDadReply(d, utt, line, afterDelay = 0) {
 }
 
 /**
+ * Queue a forced line for the next free slot.
+ *
+ * Forced lines skip the BAND table — a bot leaving the truck is a physics
+ * reason all by itself — but they must NOT skip the global spacing. Four bots
+ * coming off a trailer inside a second emitted four bubbles on one frame,
+ * which reads as noise rather than as a scene.
+ *
+ * This is a plain FIFO drained at most one per slot, deliberately rather than
+ * a precomputed schedule: a queued item fires on the first frame at or after
+ * its due time, so chaining due-times together lets each item's rounding eat
+ * into the next one's gap.
+ */
+function scheduleForced(d, utt, line, reply = null) {
+  d.forced.push({ utterance: utt, line, reply });
+}
+
+/** Emit at most one queued event line, if the global gate is open. */
+function drainForced(d, events) {
+  if (!d.forced.length || d.t < d.nextGlobal || d.t < d.muteUntil) return false;
+  const item = d.forced.shift();
+  events.push(item.utterance);
+  commit(d, item.utterance, item.line);
+  if (item.reply) {
+    // The reply beat hangs off when the line was actually HEARD.
+    const reply = render(d, item.reply, 'driver', item.utterance.band);
+    d.queue.push({ at: d.t + DIALOGUE.dadReplyDelay, utterance: reply, line: item.reply });
+  }
+  return true;
+}
+
+/**
  * A discrete event forces a line through, bypassing the band table: a bot
  * leaving the truck is a physics reason by itself.
+ *
+ * Nothing is emitted synchronously — everything is queued and comes out of
+ * update() on its slot, so there is exactly one emission path in the engine.
  */
 export function trigger(d, kind, opts = {}) {
   const u = unlocks(d.memory);
@@ -260,8 +312,32 @@ export function trigger(d, kind, opts = {}) {
     const line = pickWeighted(pool, d.rng);
     if ((d.lineCooldown[line.id] ?? 0) > d.t) return events;
     const utt = render(d, line, speaker, 'honk');
-    events.push(utt);
-    commit(d, utt, line);
+    scheduleForced(d, utt, line);
+    return events;
+  }
+
+  // Generic forced events: a bot catching the edge, hauling itself back, or
+  // being shaken off on purpose. Each is a physics fact by itself, so it
+  // bypasses the band table the same way a drop does.
+  if (kind === 'grab' || kind === 'save' || kind === 'shaken') {
+    // 'clinger' names the bot this event is ABOUT, so it resolves straight to
+    // opts.botId here rather than going through the state vector — by the time
+    // a shake is processed they may already be off the truck.
+    const pool = d.lines.filter((l) => l.event === kind && (
+      l.speaker === opts.botId || l.speaker === 'any'
+      || l.speaker === 'crowd' || l.speaker === 'clinger'));
+    if (!pool.length) return events;
+    const line = pickWeighted(pool, d.rng);
+    if ((d.lineCooldown[line.id] ?? 0) > d.t) return events;
+    const speaker = line.speaker === 'any' || line.speaker === 'crowd'
+      ? resolveSpeaker(d, line, opts.S)
+      : opts.botId;
+    if (!speaker) return events;
+    if (kind !== 'save') events.push({ kind: 'clear' });
+    const utt = render(d, line, speaker, kind);
+    // Dad has an opinion about what he just did.
+    const dad = kind === 'shaken' ? d.lines.find((l) => l.id === 'dad_shake') : null;
+    scheduleForced(d, utt, line, dad);
     return events;
   }
 
@@ -272,17 +348,12 @@ export function trigger(d, kind, opts = {}) {
     d.livingCrew.delete(opts.botId);
     recordDeath(d.memory, opts.botId, opts.cause ?? 'unknown');
     const pool = d.lines.filter((l) => l.event === 'death' && l.speaker === opts.botId);
+    const dad = d.lines.find((l) => l.id === 'dad_drop') ?? null;
     if (pool.length) {
       const line = pickWeighted(pool, d.rng);
       const utt = render(d, line, opts.botId, 'drop');
       events.push({ kind: 'clear' });
-      events.push(utt);
-      commit(d, utt, line);
-    }
-    const dad = d.lines.find((l) => l.id === 'dad_drop');
-    if (dad) {
-      const reply = render(d, dad, 'driver', 'drop');
-      d.queue.push({ at: d.t + DIALOGUE.dadReplyDelay + 0.3, utterance: reply, line: dad });
+      scheduleForced(d, utt, line, dad);
     }
     return events;
   }

@@ -126,17 +126,37 @@ export function drawStatus(ctx, canvas, S, truck, memory) {
   ctx.roundRect(pad + 10, pad + 24, Math.max(2, (w - 20) * S.panic), 9, 5);
   ctx.fill();
 
-  // Roster
+  // Roster. Anyone dangling is marked, because "three aboard" and "two aboard
+  // plus one hanging off the back" are very different situations.
   const alive = truck.bots.filter((b) => !b.lost);
   ctx.textAlign = 'right';
   ctx.font = 'bold 11px system-ui, sans-serif';
-  const label = alive.length ? alive.map((b) => b.robot.name).join('  ') : 'nobody left lol';
+  const label = alive.length
+    ? alive.map((b) => (b.clinging ? `${b.robot.name}!` : b.robot.name)).join('  ')
+    : 'nobody left lol';
   ctx.fillStyle = alive.length ? '#dfe8f2' : '#e8736b';
   ctx.fillText(label, canvas.width - pad, pad + 16);
   ctx.fillStyle = '#8d97a5';
   ctx.font = '10px system-ui, sans-serif';
   ctx.fillText(`ALTITUDE ${Math.round(S.altitude * 100)}%   TILT ${S.tilt.toFixed(0)}°   HONKS ${memory.honks}`,
     canvas.width - pad, pad + 32);
+
+  // A dangling bot needs a loud, unmissable prompt. The player has a couple of
+  // seconds to decide whether to steady up and haul them back or honk them off
+  // for the speed, and they cannot make that call if nobody tells them it is a
+  // call they are making.
+  if (S.clinging > 0) {
+    const msg = 'HANGING ON — drive steady to pull them up, honk to let go';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    const w2 = ctx.measureText(msg).width;
+    ctx.fillStyle = 'rgba(10,13,19,0.82)';
+    ctx.beginPath();
+    ctx.roundRect(canvas.width / 2 - w2 / 2 - 12, pad + 42, w2 + 24, 24, 7);
+    ctx.fill();
+    ctx.fillStyle = '#ffd166';
+    ctx.fillText(msg, canvas.width / 2, pad + 58);
+  }
 }
 
 /**
@@ -155,6 +175,7 @@ export function drawDebug(ctx, canvas, S, bands, log) {
     `rollback  ${S.rollback}   stalled ${S.stalled}`,
     `altitude  ${S.altitude.toFixed(2)}   void ${S.voidLengths.toFixed(2)} truck-len`,
     `crew      ${S.crew}   panic ${S.panic.toFixed(2)}`,
+    `clinging  ${S.clinging} [${S.clingingIds?.join(' ') || '-'}]  grip ${(S.clingGrip ?? 1).toFixed(2)}`,
     `sinceLine ${S.sinceLine.toFixed(1)}s  lastEvent ${S.lastEvent ?? '—'}`,
     '',
     `BANDS  ${bands.length ? bands.join(' ') : '(none — silence is correct)'}`,
