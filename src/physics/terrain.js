@@ -32,18 +32,23 @@ export function buildHeightmap(cfg = TERRAIN) {
     phase: rnd() * Math.PI * 2,
   });
   const r = cfg.roughness ?? 1;
-  const waves = [wave(1100, 10 * r), wave(480, 6 * r), wave(190, 3 * r)];
+  // Each entry is [wavelength, max slope it may contribute]. Levels override
+  // these to change the character of the ground: long lazy swells for dunes,
+  // short vicious chop for broken volcanic rock.
+  const waveSpec = cfg.waves ?? [[1100, 10], [480, 6], [190, 3]];
+  const waves = waveSpec.map(([len, deg]) => wave(len, deg * r));
 
   // The ramps are where the tilt bands live. A smoothstep ramp's peak slope is
   // 1.5x its average, so peakDeg below is what the truck actually reads.
   const ramp = (at, w, peakDeg) => ({
     at, w, rise: (Math.tan((peakDeg * Math.PI) / 180) * w) / 1.5,
   });
-  const ramps = [
-    ramp(1750, 440, 26),   // first real climb → tilt_30, "first real worry"
-    ramp(4300, 380, 40),   // the mean one     → tilt_45, "measured terror"
-    ramp(7400, 340, 38),   // the wall         → tilt_45, and it is passable
+  const rampSpec = cfg.ramps ?? [
+    [1750, 440, 26],   // first real climb → tilt_30, "first real worry"
+    [4300, 380, 40],   // the mean one     → tilt_45, "measured terror"
+    [7400, 340, 38],   // the wall         → tilt_45, and it is passable
   ];
+  const ramps = rampSpec.map(([at, w, deg]) => ramp(at, w, deg));
   // Note: no ramp is built past 58 degrees. tilt_60 is the "goodbye" band, a
   // failure state — a mandatory 60-degree climb would make the map unwinnable.
   // You reach tilt_60 by cresting the wall badly or landing wrong, not by design.
@@ -158,25 +163,76 @@ export function altitudeAt(hm, x) {
   return Math.max(0, Math.min(1, x / hm.cfg.summitX));
 }
 
-/** Rotated-rectangle static bodies following the heightmap, skipping the gaps. */
+const GROUND_DEPTH = 220;
+
+/**
+ * The drivable span of one heightmap segment, clipped against the void gaps.
+ * Returns null when the segment is entirely inside a gap.
+ *
+ * Clipping rather than dropping whole segments matters: skipping any segment
+ * that merely touched a gap left up to a full `step` of missing ground at each
+ * void edge — an invisible hole the truck fell through before reaching the
+ * visible drop.
+ */
+function clipSegment(hm, ax, bx) {
+  let lo = ax, hi = bx;
+  for (const [gx, gw] of hm.cfg.gaps) {
+    const gLo = gx, gHi = gx + gw;
+    if (hi <= gLo || lo >= gHi) continue;      // no overlap
+    if (lo >= gLo && hi <= gHi) return null;   // wholly inside the void
+    if (lo < gLo && hi > gHi) hi = gLo;        // spans it: keep the left part
+    else if (lo < gLo) hi = Math.min(hi, gLo);
+    else lo = Math.max(lo, gHi);
+  }
+  return hi - lo > 0.5 ? [lo, hi] : null;
+}
+
+/**
+ * Static collision bodies following the heightmap.
+ *
+ * Each segment is an exact quad whose TOP EDGE IS THE DRAWN GROUND LINE:
+ * [a, b, b+depth, a+depth], with vertical sides and no rotation.
+ *
+ * This shape is deliberate. The previous version used rotated rectangles
+ * offset along their own normal, and had the sign of the x offset inverted —
+ * which slid the collision surface sideways by up to 51px on a 40 degree slope
+ * while being exactly correct on the flat. The truck floated above the visible
+ * ground on hills for an entire release. A quad built from the heightmap points
+ * themselves has no angle and no normal to get the sign of: the surface cannot
+ * drift from the terrain because it is defined by the same two points the
+ * renderer draws.
+ */
 export function buildTerrainBodies(Matter, hm) {
   const { Bodies } = Matter;
-  const { points, cfg } = hm;
+  const { points } = hm;
   const bodies = [];
-  const thickness = 80;
+
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i], b = points[i + 1];
-    const midX = (a.x + b.x) / 2;
-    if (isOverGap(hm, midX) || isOverGap(hm, a.x) || isOverGap(hm, b.x)) continue;
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const len = Math.hypot(dx, dy);
-    const angle = Math.atan2(dy, dx);
-    bodies.push(Bodies.rectangle(
-      midX + (Math.sin(angle) * thickness) / 2,
-      (a.y + b.y) / 2 + (Math.cos(angle) * thickness) / 2,
-      len + 2, thickness,
-      { isStatic: true, angle, friction: 1.0, label: 'ground', render: { visible: false } },
-    ));
+    const span = clipSegment(hm, a.x, b.x);
+    if (!span) continue;
+    const [lo, hi] = span;
+
+    // Interpolate the surface at the clipped edges so a trimmed segment still
+    // meets the terrain exactly rather than stepping up or down to it.
+    const yAt = (x) => a.y + ((b.y - a.y) * (x - a.x)) / (b.x - a.x);
+    const topL = { x: lo, y: yAt(lo) };
+    const topR = { x: hi, y: yAt(hi) };
+
+    const verts = [
+      topL,
+      topR,
+      { x: hi, y: topR.y + GROUND_DEPTH },
+      { x: lo, y: topL.y + GROUND_DEPTH },
+    ];
+    // fromVertices centres the body on (x, y), so pass the centroid to land the
+    // vertices exactly where they were computed.
+    const cx = (lo + hi) / 2;
+    const cy = (topL.y + topR.y) / 2 + GROUND_DEPTH / 2;
+
+    bodies.push(Bodies.fromVertices(cx, cy, [verts], {
+      isStatic: true, friction: 1.0, label: 'ground', render: { visible: false },
+    }));
   }
   return bodies;
 }

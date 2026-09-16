@@ -71,6 +71,28 @@
   #endcard { text-align: center; }
   #pausecard[hidden] { display: none !important; }
   #crewcard[hidden] { display: none !important; }
+  #levelcard[hidden] { display: none !important; }
+
+  /* ── Level select ── */
+  #levelcard h2 { margin: 0 0 10px; font: 800 18px/1.2 system-ui; color: #eef4fa; }
+  .levelcard {
+    display: flex; align-items: center; gap: 11px; width: 100%; margin-bottom: 7px;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 12px; padding: 7px 9px; text-align: left; color: inherit;
+    font: inherit; cursor: pointer; touch-action: manipulation;
+  }
+  .levelcard.active { border-color: #7ec8f2; }
+  .levelcard.locked { opacity: 0.42; cursor: not-allowed; }
+  .levelswatch {
+    width: 52px; height: 46px; border-radius: 9px; flex: 0 0 auto; position: relative;
+    display: grid; place-content: center; border: 1px solid rgba(255,255,255,0.14);
+  }
+  .levelnum { font: 800 17px ui-monospace, monospace; color: rgba(255,255,255,0.92);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
+  .levelbody { min-width: 0; }
+  .levelname { font: 700 15px system-ui; color: #eef4fa; }
+  .levelhazard { font-size: 11.5px; color: #9aa4b2; margin-top: 1px; }
+  .levelmeta { font: 600 10px ui-monospace, monospace; color: #6f7986; margin-top: 3px; }
 
   /* Both overlays scroll: a landscape phone is ~390px tall and the report can
      run past that once the whole crew has come off. */
@@ -192,9 +214,14 @@
   <p>Desktop: <b>D</b>/<b>→</b> gas, <b>A</b>/<b>←</b> brake, <b>Space</b> honk,
      <b>R</b> restart, <b>~</b> debug.</p>
   <p style="color:#6f7986">Tap anywhere to start (and to allow sound).</p>
-  <button id="opencrew" style="margin-top:4px;justify-self:center;height:38px;padding:0 18px;
-    border-radius:10px;border:2px solid rgba(255,255,255,0.28);background:transparent;
-    color:#dfe8f2;font:700 13px system-ui;touch-action:manipulation">Name the crew</button>
+  <div style="display:flex;gap:10px;justify-content:center;margin-top:4px">
+    <button id="opencrew" style="height:38px;padding:0 18px;
+      border-radius:10px;border:2px solid rgba(255,255,255,0.28);background:transparent;
+      color:#dfe8f2;font:700 13px system-ui;touch-action:manipulation">Name the crew</button>
+    <button id="openlevels" style="height:38px;padding:0 18px;
+      border-radius:10px;border:2px solid rgba(255,255,255,0.28);background:transparent;
+      color:#dfe8f2;font:700 13px system-ui;touch-action:manipulation">Pick a hill</button>
+  </div>
 </div>
 
 <div id="pausecard" hidden>
@@ -206,6 +233,16 @@
   </div>
 </div>
 
+<div id="levelcard" class="sheet" hidden>
+  <div class="sheet-inner">
+    <h2>Pick your hill</h2>
+    <div id="levellist"></div>
+    <div class="btnrow">
+      <button id="levelclose" class="ghost">Back</button>
+    </div>
+  </div>
+</div>
+
 <div id="crewcard" class="sheet" hidden>
   <div class="sheet-inner">
     <h2>Your crew</h2>
@@ -214,6 +251,7 @@
     <div id="crewlist"></div>
     <div class="btnrow">
       <button id="crewdone">Start driving</button>
+      <button id="crewlevels" class="ghost">Change hill</button>
       <button id="crewreset" class="ghost">Reset names</button>
     </div>
   </div>
@@ -227,6 +265,7 @@
     <div class="btnrow">
       <button id="again">Again</button>
       <button id="share" class="ghost">Share report</button>
+      <button id="levels" class="ghost">Change hill</button>
       <button id="crew" class="ghost">Rename crew</button>
     </div>
     <p id="sharenote"></p>

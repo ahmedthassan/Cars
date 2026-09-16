@@ -35,19 +35,16 @@ export function createTruck(Matter, x, y, robots) {
   Body.setPosition(cab, { x, y });
 
   const trailerX = x - P.cab.w / 2 - P.trailer.w / 2 - P.hitch.gap;
-  // A flatbed with a headboard and a tailboard. A bare plank loses the whole
-  // crew in the first ten seconds, which kills the joke before it starts —
-  // a bot leaving should be an event, not a certainty.
-  const bed = Bodies.rectangle(0, 0, P.trailer.w, P.trailer.h, { label: 'bed' });
-  const lipL = Bodies.rectangle(-P.trailer.w / 2 + P.lip.w / 2, -P.lip.h, P.lip.w, P.lip.h * 2, { label: 'lip' });
-  const lipR = Bodies.rectangle(P.trailer.w / 2 - P.lip.w / 2, -P.lip.h, P.lip.w, P.lip.h * 2, { label: 'lip' });
-  const trailer = Body.create({
-    parts: [bed, lipL, lipR],
+  // A bare flatbed. Nothing holds the crew on but friction, and there is
+  // deliberately very little of it.
+  // Seated so its own wheel rests on the ground when the cab's do, rather than
+  // a hand-picked "+6" that left the pair fighting each other.
+  const trailerY = y + (P.cab.h / 2 + P.wheel.r * 0.35) - (P.cab.h / 2 + P.wheel.r * 0.35 - P.trailer.h / 2);
+  const trailer = Bodies.rectangle(trailerX, trailerY, P.trailer.w, P.trailer.h, {
     collisionFilter: { group: GROUP },
     friction: P.cargoFriction,
     label: 'trailer',
   });
-  Body.setPosition(trailer, { x: trailerX, y: y + 6 });
   Body.setMass(trailer, P.trailerMass);
 
   const mkWheel = (wx, wy, driven) => {
@@ -80,33 +77,76 @@ export function createTruck(Matter, x, y, robots) {
     render: { visible: false },
   });
 
+  // ── The hitch, derived rather than guessed ─────────────────────────────────
+  //
+  // The two hitch constraints act as a couple: together they decide what angle
+  // the trailer holds relative to the cab. Their attachment points therefore
+  // have to describe the pose we actually want — a LEVEL bed sitting behind a
+  // level cab — or the truck settles wherever the mismatch puts it.
+  //
+  // It previously settled at cab +21 degrees and trailer -22: permanently
+  // jackknifed, with the bed at a 22-degree slope while parked on flat ground.
+  // Cargo at 0.30 friction starts sliding at 17 degrees, so the crew slid off
+  // the back before the player touched anything. The old 0.86 cargo friction
+  // (which holds to 40 degrees) hid it completely, and the trailer lip hid what
+  // that missed — the lip was never fixing a design problem, it was covering
+  // this one.
+  //
+  // Both bodies rest with their wheels on the ground, and their wheels hang by
+  // different amounts, so their centres sit at different heights. That
+  // difference is what the attachment offsets have to cancel.
+  const cabAxleDrop = P.cab.h / 2 + P.wheel.r * 0.35;            // centre → axle
+  const trailerAxleDrop = cabAxleDrop - P.trailer.h / 2;
+  // How much lower the trailer's centre sits than the cab's when both are level
+  // and both wheels are touching.
+  // Both wheel centres rest at (ground - r), so each body's centre sits that
+  // much above its own axle. The trailer hangs less far below its axle, so its
+  // centre ends up LOWER by exactly the difference — and the cab's hitch point
+  // has to drop by the same amount to meet it on the level.
+  const centreOffset = cabAxleDrop - trailerAxleDrop;   // = trailer.h / 2
+  const hitchSpread = 16;   // vertical gap between the two hitch points
+
+  const hitchPoint = (dyTrailer, stiffness) => Constraint.create({
+    bodyA: cab,
+    // Raised by centreOffset so the pair is horizontal at rest: a constraint
+    // that has to pull diagonally is a constraint that rotates something.
+    pointA: { x: -P.cab.w / 2, y: dyTrailer + centreOffset },
+    bodyB: trailer,
+    pointB: { x: P.trailer.w / 2, y: dyTrailer },
+    stiffness,
+    length: P.hitch.gap,
+    render: { visible: false },
+  });
+
   const constraints = [
     axle(cab, front, P.cab.w * P.wheelbase),
     axle(cab, rear, -P.cab.w * P.wheelbase),
     axle(trailer, tail, -P.trailer.w * P.tailWheel),
-    // The hitch. Two constraints instead of one so the trailer cannot spin
-    // freely around a single pivot — it has to follow, and it can jackknife.
-    Constraint.create({
-      bodyA: cab, pointA: { x: -P.cab.w / 2, y: 8 },
-      bodyB: trailer, pointB: { x: P.trailer.w / 2, y: 0 },
-      stiffness: 0.95, length: P.hitch.gap, render: { visible: false },
-    }),
-    Constraint.create({
-      bodyA: cab, pointA: { x: -P.cab.w / 2, y: -6 },
-      bodyB: trailer, pointB: { x: P.trailer.w / 2, y: -10 },
-      stiffness: 0.5, length: P.hitch.gap + 4, render: { visible: false },
-    }),
+    // Two points rather than one, so the trailer cannot spin freely around a
+    // single pivot. It still articulates and can jackknife under real forces —
+    // it just does not start that way.
+    hitchPoint(0, 0.92),
+    hitchPoint(-hitchSpread, 0.72),
   ];
 
   // Bots ride loose on the trailer. Nothing holds them on but friction, which
   // is the entire premise of the game.
   const bots = robots.map((r, i) => {
-    const bx = trailerX - P.trailer.w / 2 + 30 + i * (P.trailer.w - 54) / Math.max(1, robots.length - 1);
-    const b = Bodies.rectangle(bx, y - 26, 24, 32, {
+    // Spread across the middle of the bed, not out to its edges. Starting the
+    // rearmost bot 25px from the tail meant a couple of seconds of acceleration
+    // put him over it.
+    const span = P.trailer.w * P.cargoSpread;
+    const bx = trailerX - span / 2 + (i * span) / Math.max(1, robots.length - 1);
+    // Resting on the bed, not dropped onto it: a spawn impact with restitution
+    // is enough to bounce one off before the run starts.
+    const b = Bodies.rectangle(bx, trailerY - P.trailer.h / 2 - 16.5, 24, 32, {
       friction: P.cargoFriction,
       frictionAir: 0.006,
+      // Bounce. A bot that tumbles off a bump is funnier, and more alarming to
+      // watch, than one that slides off politely.
+      restitution: P.cargoRestitution,
       label: 'bot',
-      chamfer: { radius: 4 },
+      chamfer: { radius: 6 },
     });
     Body.setMass(b, P.botMass);
     b.botId = r.id;
@@ -221,7 +261,8 @@ function grabPoint(truck, bot) {
   const a = -t.angle;
   const localX = dx * Math.cos(a) - dy * Math.sin(a);
   const end = localX >= 0 ? 1 : -1;          // whichever end they were nearest
-  return { x: end * (PHYSICS.trailer.w / 2 - 3), y: -PHYSICS.lip.h };
+  // The grab point is the bed's own edge now that there is no lip to catch.
+  return { x: end * (PHYSICS.trailer.w / 2 - 3), y: -PHYSICS.trailer.h / 2 };
 }
 
 /**

@@ -7,8 +7,11 @@ export const PHYSICS = {
   // Truck geometry (px)
   cab:      { w: 92,  h: 54 },
   trailer:  { w: 168, h: 22 },
-  lip:      { h: 17, w: 9 },   // headboard/tailboard. Without it every bot is
-                               // gone inside ten seconds and nobody gets to talk.
+  // NO LIP. There was a headboard and tailboard here to stop the crew sliding
+  // off, added when losing everyone in ten seconds looked like a bug. It isn't:
+  // bots coming off IS the game. The near-miss — three left, then two, then one
+  // hanging by an arm — is what makes you start again. A flat bed with almost no
+  // grip is the whole design.
   wheel:    { r: 25 },
   hitch:    { gap: 10 },
 
@@ -70,7 +73,19 @@ export const PHYSICS = {
   tractionFloor:  0.28,   // torque multiplier at slip = 1
   wheelFriction:  1.3,    // lower toward 0.7 for slippery snow
   wheelStatic:    0.9,
-  cargoFriction:  0.86,   // lower and the bots slide like soap
+  // Cargo grip, which maps straight onto "how steep a hill before the crew
+  // slides off": they start sliding at atan(friction), so 0.62 is about 32
+  // degrees. Below ~0.5 the truck simply ACCELERATING walks them off the back
+  // — measured: at 0.30 the rearmost bot was gone in 2.2 seconds on flat ground
+  // at full throttle, before the player had met a hill. That is not difficulty,
+  // it is a guaranteed loss.
+  cargoFriction:  0.62,
+  // Some bounce so a bump tumbles them rather than sliding them politely, but
+  // not so much that they jitter along the bed under ordinary vibration.
+  cargoRestitution: 0.12,
+  // Fraction of the bed the crew is spread across. They need room to slide
+  // before they run out of trailer, or the first hard acceleration is fatal.
+  cargoSpread: 0.56,
   rollingFriction: 0.022,
 
   honkForce: -0.0012,     // upward nudge per bot. Raise to yeet on purpose.

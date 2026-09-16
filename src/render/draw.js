@@ -37,22 +37,32 @@ function begin(ctx, cam, canvas) {
   ctx.translate(-cam.x, -cam.y);
 }
 
-export function drawSky(ctx, canvas, altitude) {
+export function drawSky(ctx, canvas, altitude, theme) {
+  const stops = theme?.sky ?? ['#14203a', '#2d4d72', '#6d94b8'];
   const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  // The sky gets colder and thinner the higher you get.
-  const top = `hsl(${208 - altitude * 14}, ${52 + altitude * 18}%, ${20 + altitude * 12}%)`;
-  const bot = `hsl(${205 - altitude * 10}, 36%, ${52 + altitude * 16}%)`;
-  g.addColorStop(0, top);
-  g.addColorStop(1, bot);
+  stops.forEach((c, i) => g.addColorStop(i / (stops.length - 1), c));
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Climbing lifts the horizon light a little — thinner air near the top.
+  if (altitude > 0.01) {
+    ctx.fillStyle = `rgba(255,255,255,${altitude * 0.06})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  if (theme?.light) {
+    ctx.fillStyle = theme.light;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 }
 
-export function drawParallax(ctx, cam, canvas) {
-  // Two lazy ridgelines. Cheap depth, no assets.
+export function drawParallax(ctx, cam, canvas, theme) {
+  // Three lazy ridgelines. Cheap depth, no assets. The tint comes from the
+  // level so distant hills read as snow, dune, storm-cloud or volcanic rock.
+  const tint = theme?.ridge ?? 'rgba(255,255,255,0.13)';
   const layers = [
-    { k: 0.22, y: 0.58, h: 150, c: 'rgba(255,255,255,0.10)' },
-    { k: 0.42, y: 0.68, h: 110, c: 'rgba(255,255,255,0.16)' },
+    { k: 0.14, y: 0.50, h: 190, c: tint },
+    { k: 0.26, y: 0.60, h: 150, c: tint },
+    { k: 0.46, y: 0.70, h: 110, c: tint },
   ];
   for (const L of layers) {
     ctx.fillStyle = L.c;
@@ -70,7 +80,7 @@ export function drawParallax(ctx, cam, canvas) {
   }
 }
 
-export function drawTerrain(ctx, cam, canvas, hm) {
+export function drawTerrain(ctx, cam, canvas, hm, theme) {
   begin(ctx, cam, canvas);
   const { points } = hm;
   // Contiguous runs only: a void gap must read as genuinely absent road.
@@ -84,16 +94,21 @@ export function drawTerrain(ctx, cam, canvas, hm) {
     ctx.lineTo(last.x, last.y + 1400);
     ctx.lineTo(run[0].x, run[0].y + 1400);
     ctx.closePath();
-    ctx.fillStyle = '#3b3f47';
+    ctx.fillStyle = theme?.ground ?? '#3b3f47';
     ctx.fill();
-    // Snow cap on the surface.
+
+    // The surface cap is filled DOWNWARD from the path, not stroked along it.
+    // A centred stroke puts half its width above the line, so the ground you
+    // could see sat ~5px higher than the ground the wheels actually rest on.
+    // The top of this band is the collision surface, exactly.
+    const cap = theme?.capHeight ?? 11;
     ctx.beginPath();
     ctx.moveTo(run[0].x, run[0].y);
     for (const p of run) ctx.lineTo(p.x, p.y);
-    ctx.strokeStyle = '#f2f6fa';
-    ctx.lineWidth = 11;
-    ctx.lineJoin = 'round';
-    ctx.stroke();
+    for (let i = run.length - 1; i >= 0; i--) ctx.lineTo(run[i].x, run[i].y + cap);
+    ctx.closePath();
+    ctx.fillStyle = theme?.cap ?? '#f2f6fa';
+    ctx.fill();
     run = [];
   };
   for (const p of points) {

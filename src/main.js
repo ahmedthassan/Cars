@@ -1,7 +1,7 @@
 // ── Boot & game loop ──────────────────────────────────────────────────────────
 import { DIALOGUE, DRIVER, GAME, PHYSICS, ROBOTS, TERRAIN } from './config.js';
 import { createWorld } from './physics/world.js';
-import { buildHeightmap, buildTerrainBodies, groundY } from './physics/terrain.js';
+import { buildHeightmap, buildTerrainBodies, gradientAt, groundY } from './physics/terrain.js';
 import {
   applyDrive, createTruck, honk, isFlipped, shakeClingers, stabiliseInAir,
   startCling, tiltDegrees, trackContacts, updateCling,
@@ -12,6 +12,7 @@ import { LINES } from './dialogue/lines.js';
 import { closeRun, createMemory, recordFlip, recordHonk } from './dialogue/memory.js';
 import {
   createCamera, drawBots, drawParallax, drawSky, drawTerrain, drawTruck, updateCamera,
+  worldToScreen,
 } from './render/draw.js';
 import {
   clearBubbles, createHud, drawBubbles, drawDebug, drawStatus, say, updateHud,
@@ -24,8 +25,14 @@ import {
   onBackButton, reacquireWakeLock, safeAreaInsets,
 } from './platform/native.js';
 import { renderCrew, resetCrew } from './ui/crew.js';
+import { renderLevels } from './ui/levels.js';
 import { renderReport, reportText, shareReport } from './ui/report.js';
 import { roster } from './roster.js';
+import { applyLevel, LEVELS, levelById } from './levels/index.js';
+import {
+  createWeather, drawHeadlight, drawWeatherBack, drawWeatherFront, enableEmbers, updateWeather,
+} from './render/weather.js';
+import { bestFor, currentLevelId, isUnlocked, recordResult, setCurrentLevel } from './progress.js';
 
 const Matter = window.Matter;
 const canvas = document.getElementById('game');
@@ -66,13 +73,22 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
+let level = applyLevel(levelById(currentLevelId()));
+
 function newRun() {
+  // Re-apply on every run: the level's overrides live in the shared config
+  // objects, so a restart has to re-establish them rather than inherit
+  // whatever the last level left behind.
+  level = applyLevel(level);
   const { engine, world } = createWorld(Matter);
   const heightmap = buildHeightmap();
   Matter.Composite.add(world, buildTerrainBodies(Matter, heightmap));
 
   const startX = 200;
-  const truck = createTruck(Matter, startX, groundY(heightmap, startX) - 80, roster());
+  // Spawn resting on the surface. Dropping the truck 80px and letting it slam
+  // down was enough to eject a bot before the player had touched anything.
+  const restY = groundY(heightmap, startX) - (PHYSICS.cab.h / 2 + PHYSICS.wheel.r * 1.35);
+  const truck = createTruck(Matter, startX, restY, roster());
   Matter.Composite.add(world, truck.composite);
   trackContacts(Matter, engine, truck);
 
@@ -101,6 +117,12 @@ function newRun() {
     sampler: createSampler(),
     dialogue: createDialogue({ lines: LINES, memory, crew: ROBOTS.map((r) => r.id) }),
     camera: createCamera(),
+    weather: (() => {
+      const w = createWeather(level.theme, TERRAIN.seed);
+      // The volcano theme asks for embers; without this the flag was inert.
+      enableEmbers(w, !!level.theme.embers);
+      return w;
+    })(),
     over: null,
     paused: false,
     flippedFor: 0,
@@ -233,15 +255,40 @@ function end(title, detail) {
 
   const survivors = game.truck.bots.filter((b) => !b.lost).map((b) => b.botId);
   closeRun(memory, survivors);
+  recordResult(level.id, {
+    won, crew: survivors.length, altitude: game.S?.altitude ?? 0,
+  });
   game.over = { title, detail, survivors };
 
   const titleEl = document.getElementById('endtitle');
   titleEl.textContent = title;
   titleEl.classList.toggle('win', won);
-  document.getElementById('enddetail').textContent = detail;
+  document.getElementById('enddetail').textContent = `${level.name} — ${detail}`;
   renderReport(document.getElementById('reportbody'), { memory, survivors });
   document.getElementById('sharenote').textContent = '';
   document.getElementById('endcard').hidden = false;
+}
+
+// ── Level select ─────────────────────────────────────────────────────────────
+function openLevels() {
+  if (game && !game.over) setPaused(true);
+  document.getElementById('pausecard').hidden = true;
+  document.getElementById('crewcard').hidden = true;
+  renderLevels(document.getElementById('levellist'), {
+    activeId: level.id,
+    onPick: (id) => {
+      setCurrentLevel(id);
+      level = applyLevel(levelById(id));
+      closeLevels();
+      restart();
+    },
+  });
+  document.getElementById('tapstart')?.setAttribute('hidden', '');
+  document.getElementById('levelcard').hidden = false;
+}
+
+function closeLevels() {
+  document.getElementById('levelcard').hidden = true;
 }
 
 // ── Crew screen ──────────────────────────────────────────────────────────────
@@ -344,6 +391,17 @@ document.getElementById('opencrew').addEventListener('click', (e) => {
   openCrew();
 });
 document.getElementById('crewdone').addEventListener('click', closeCrew);
+document.getElementById('levels').addEventListener('click', openLevels);
+document.getElementById('crewlevels').addEventListener('click', openLevels);
+document.getElementById('levelclose').addEventListener('click', () => {
+  closeLevels();
+  if (game?.over) document.getElementById('endcard').hidden = false;
+  else setPaused(false);
+});
+document.getElementById('openlevels').addEventListener('click', (e) => {
+  e.stopPropagation();
+  openLevels();
+});
 document.getElementById('crewreset').addEventListener('click', () => {
   resetCrew(document.getElementById('crewlist'), refreshNames);
 });
@@ -417,6 +475,7 @@ function frame(now) {
     if (!game.paused) {
       updateHud(hud, dt);
       updateCamera(game.camera, game.truck, canvas, dt);
+      updateWeather(game.weather, dt, game.camera, canvas);
     }
   }
 
@@ -424,11 +483,20 @@ function frame(now) {
   const wheelSpeed = game.truck.rear.angularVelocity;
   updateEngine(wheelSpeed, input.gas && !game.over && !game.paused, S ? S.wheelSlip : 0);
 
-  drawSky(ctx, canvas, S ? S.altitude : 0);
-  drawParallax(ctx, game.camera, canvas);
-  drawTerrain(ctx, game.camera, canvas, game.heightmap);
+  const theme = level.theme;
+  drawSky(ctx, canvas, S ? S.altitude : 0, theme);
+  drawParallax(ctx, game.camera, canvas, theme);
+  drawWeatherBack(ctx, game.weather, canvas, theme);
+  drawTerrain(ctx, game.camera, canvas, game.heightmap, theme);
   drawBots(ctx, game.camera, canvas, game.truck);
   drawTruck(ctx, game.camera, canvas, game.truck);
+  // The headlight is drawn over the truck but under the weather, so rain
+  // crosses the beam rather than sitting behind it.
+  if (theme.headlight) {
+    drawHeadlight(ctx, canvas, theme,
+      worldToScreen(game.camera, canvas, game.truck.cab.position), game.truck.cab.angle);
+  }
+  drawWeatherFront(ctx, game.weather, canvas, theme);
   if (S) {
     drawBubbles(ctx, game.camera, canvas, hud, game.truck);
     drawStatus(ctx, canvas, S, game.truck, memory, insets);
@@ -465,6 +533,11 @@ window.__haul = {
   get memory() { return memory; },
   get truck() { return game.truck; },
   get over() { return game.over; },
+  // Terrain queries, exposed so a test can compare where the ground is DRAWN
+  // against where the wheels actually rest. The absence of exactly this check
+  // is what let a 51px collision offset ship.
+  groundYAt: (x) => groundY(game.heightmap, x),
+  gradientAt: (x) => gradientAt(game.heightmap, x),
   get paused() { return game.paused; },
   input,
   honk: doHonk,
@@ -472,6 +545,10 @@ window.__haul = {
   setPaused,
   openCrew,
   closeCrew,
+  openLevels,
+  get level() { return level; },
+  setLevel: (id) => { setCurrentLevel(id); level = applyLevel(levelById(id)); restart(); },
+  get levels() { return LEVELS.map((l) => l.id); },
   get native() { return isNative(); },
   get report() {
     return reportText({
