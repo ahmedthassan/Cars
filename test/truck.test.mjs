@@ -60,47 +60,50 @@ test('the cab and trailer rest at heights that put every wheel on the ground', (
   const M = stubMatter();
   const truck = createTruck(M, 200, cabRestY, ROBOTS);
 
-  const cabAxleDrop = PHYSICS.cab.h / 2 + PHYSICS.wheel.r * 0.35;
-  const trailerAxleDrop = cabAxleDrop - PHYSICS.trailer.h / 2;
-
   for (const w of truck.wheels) {
     const bottom = w.position.y + PHYSICS.wheel.r;
     assert.ok(Math.abs(bottom - GROUND) < 0.51,
       `a wheel spawns ${(bottom - GROUND).toFixed(1)}px off the ground`);
   }
-
-  // The trailer hangs less far below its axle, so its centre sits lower.
-  const expected = cabRestY + (cabAxleDrop - trailerAxleDrop);
-  assert.ok(Math.abs(truck.trailer.position.y - expected) < 0.51,
-    `trailer centre is ${(truck.trailer.position.y - expected).toFixed(1)}px from level`);
+  // The trailer's bed must start above its own wheel, not below it.
+  assert.ok(truck.trailer.position.y < GROUND - PHYSICS.wheel.r,
+    'the trailer spawns at or below axle height');
 });
 
-test('the hitch pulls horizontally at rest, so nothing is levered out of true', () => {
-  // THIS is the invariant that broke. Each hitch constraint joins a point on
-  // the cab to a point on the trailer. If those two points are not at the same
-  // world height when both bodies are level, the constraint pulls diagonally
-  // and rotates the pair — which is exactly how the truck ended up parked at
-  // 21 degrees on flat ground.
+test('the two hitch legs are not a matching pair, which would weld the trailer on', () => {
+  // The cheap build-time half of the articulation check in test/articulation.test.mjs.
+  //
+  // Two constraints between the same pair of bodies hold that pair's relative
+  // ANGLE, not just its position, whenever they are parallel: matching vertical
+  // spreads on both bodies and matching lengths. That welds the cab and trailer
+  // into one rigid 270px plank — and a plank that long, driven from wheels under
+  // one end, levers itself off a 23-degree climb. Measured, when this was
+  // briefly the design: airborne mid-ramp at x=2013, pitched to 68 degrees
+  // nose-up, whole crew thrown, landed on its back.
+  //
+  // The shipped legs are mismatched on purpose: 14px apart on the cab, 10px on
+  // the trailer, and different lengths. That holds the trailer's position
+  // firmly while only loosely preferring an angle.
   const M = stubMatter();
   const truck = createTruck(M, 200, cabRestY, ROBOTS);
 
-  const hitches = M.constraints.filter(
+  const legs = M.constraints.filter(
     (c) => c.bodyA === truck.cab && c.bodyB === truck.trailer,
   );
-  assert.equal(hitches.length, 2, 'expected exactly two hitch points');
+  assert.equal(legs.length, 2, 'expected exactly two hitch legs');
 
-  for (const h of hitches) {
-    const cabPointY = truck.cab.position.y + h.pointA.y;
-    const trailerPointY = truck.trailer.position.y + h.pointB.y;
-    assert.ok(
-      Math.abs(cabPointY - trailerPointY) < 0.51,
-      `hitch point is ${(cabPointY - trailerPointY).toFixed(1)}px out of level `
-      + `(cab y ${h.pointA.y}, trailer y ${h.pointB.y}). A diagonal hitch rotates `
-      + `the trailer, tipping the cargo bed while the truck is standing still.`,
-    );
-    // And horizontally separated by the hitch gap, not overlapping.
-    const dx = (truck.cab.position.x + h.pointA.x) - (truck.trailer.position.x + h.pointB.x);
-    assert.ok(dx > 0, 'the trailer should hitch BEHIND the cab');
+  const cabSpread = Math.abs(legs[0].pointA.y - legs[1].pointA.y);
+  const trailerSpread = Math.abs(legs[0].pointB.y - legs[1].pointB.y);
+  const sameLength = Math.abs(legs[0].length - legs[1].length) < 0.01;
+  assert.ok(
+    !(Math.abs(cabSpread - trailerSpread) < 0.01 && sameLength),
+    `both hitch legs span ${cabSpread}px on each body at the same length, so together `
+    + `they fix the trailer's angle as well as its position. That is a weld, not a `
+    + `hitch, and a rigid truck this long flips itself on the first real climb.`,
+  );
+  for (const h of legs) {
+    assert.ok(truck.cab.position.x + h.pointA.x > truck.trailer.position.x + h.pointB.x,
+      'the trailer should hitch BEHIND the cab');
   }
 });
 

@@ -36,7 +36,10 @@ export const DESERT = {
     wheelFriction: 0.78,
     tractionFloor: 0.16,
     slipReference: 7.0,
-    cargoFriction: 0.62,   // slides at ~32deg
+    cargoFriction: 0.68,   // the crew starts sliding at about 34 degrees
+    // Less bed to stop them, and more bounce to start them moving.
+    lip: { h: 11, w: 8 },
+    cargoRestitution: 0.06,
     rollingFriction: 0.032,
   },
 

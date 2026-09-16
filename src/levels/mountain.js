@@ -35,9 +35,11 @@ export const MOUNTAIN = {
   physics: {
     wheelFriction: 1.3,
     tractionFloor: 0.28,
-    // The teaching level. The crew holds on up to about 39 degrees, so ordinary
-    // climbs are survivable and only the ramps and the crests cost you anyone.
-    cargoFriction: 0.80,
+    // The teaching level keeps the grip the game shipped with. Loosening this
+    // is what the later levels are for: on the first climb the crew should be
+    // lost to something the player did, and at 0.80 with a 6px kerb they were
+    // already sliding off during an ordinary launch on the flat.
+    cargoFriction: 0.86,
   },
 
   game: { winCrew: 2 },

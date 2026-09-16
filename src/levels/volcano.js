@@ -34,7 +34,10 @@ export const VOLCANO = {
     wheelFriction: 0.74,
     tractionFloor: 0.14,
     slipReference: 6.4,
-    cargoFriction: 0.46,   // slides at ~25deg: almost nothing holds
+    cargoFriction: 0.48,   // the crew starts sliding at about 26 degrees
+    // Less bed to stop them, and more bounce to start them moving.
+    lip: { h: 5,  w: 6 },
+    cargoRestitution: 0.12,
     clingDrain: 0.165,
     clingChance: 0.62,        // fewer second chances
   },

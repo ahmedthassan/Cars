@@ -7,11 +7,18 @@ export const PHYSICS = {
   // Truck geometry (px)
   cab:      { w: 92,  h: 54 },
   trailer:  { w: 168, h: 22 },
-  // NO LIP. There was a headboard and tailboard here to stop the crew sliding
-  // off, added when losing everyone in ten seconds looked like a bug. It isn't:
-  // bots coming off IS the game. The near-miss — three left, then two, then one
-  // hanging by an arm — is what makes you start again. A flat bed with almost no
-  // grip is the whole design.
+  // The headboard and tailboard. This is the single biggest lever on how loose
+  // the crew feels, so it is per-level: the Mountain keeps the full 17 the game
+  // shipped with, and each later level cuts it down.
+  //
+  // It cannot go to zero. Matter's contact friction does not hold cargo on an
+  // ACCELERATING platform the way Coulomb friction would, so on a bare bed the
+  // whole crew creeps backwards from the moment you pull away — measured, on
+  // flat ground at a gentle throttle, 50-80px in three seconds until the
+  // rearmost went over the tail. Every single run lost the same bot at 7%, in
+  // the same place, before the player had touched a control. That is not
+  // difficulty, it is a cutscene.
+  lip:      { h: 17, w: 9 },
   wheel:    { r: 25 },
   hitch:    { gap: 10 },
 
@@ -79,10 +86,10 @@ export const PHYSICS = {
   // — measured: at 0.30 the rearmost bot was gone in 2.2 seconds on flat ground
   // at full throttle, before the player had met a hill. That is not difficulty,
   // it is a guaranteed loss.
-  cargoFriction:  0.62,
+  cargoFriction:  0.86,
   // Some bounce so a bump tumbles them rather than sliding them politely, but
   // not so much that they jitter along the bed under ordinary vibration.
-  cargoRestitution: 0.12,
+  cargoRestitution: 0,
   // Fraction of the bed the crew is spread across. They need room to slide
   // before they run out of trailer, or the first hard acceleration is fatal.
   cargoSpread: 0.56,
@@ -115,7 +122,9 @@ export const PHYSICS = {
 export const TERRAIN = {
   seed: 20260913,          // fixed seed → same mountain for everyone (daily seed later)
   length: 10400,           // px of road
-  step: 44,                // heightmap sample spacing
+  step: 22,                // heightmap sample spacing. Halved when the collision
+                           // bodies started following it exactly: at 44 against
+                           // a 25px wheel, every sample was a corner.
   baseY: 520,
   climb: 0.075,            // average rise per px
   startPad: 420,           // flat run-up before the mountain starts

@@ -31,7 +31,10 @@ export const STORM = {
   physics: {
     wheelFriction: 0.92,
     tractionFloor: 0.20,
-    cargoFriction: 0.54,   // wet bed, slides at ~28deg
+    cargoFriction: 0.58,   // the crew starts sliding at about 30 degrees
+    // Less bed to stop them, and more bounce to start them moving.
+    lip: { h: 8,  w: 7 },
+    cargoRestitution: 0.09,
     clingDrain: 0.145,        // wet hands
   },
 
