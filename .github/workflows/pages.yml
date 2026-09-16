@@ -1,0 +1,63 @@
+# Publish the game to GitHub Pages.
+#
+# Builds www/ and deploys it, so there is a URL you can open on a phone, add to
+# your home screen, and send to people. The site is entirely static — Matter.js
+# is vendored and there are no runtime network calls — so this needs no secrets
+# and no server.
+#
+# ONE-TIME SETUP: Settings → Pages → Source: "GitHub Actions".
+# Pages on a PRIVATE repository requires a paid GitHub plan. On a free account,
+# make the repository public first, or host the www/ folder somewhere else —
+# any static host will serve it as-is.
+
+name: Deploy to Pages
+
+on:
+  push:
+    branches: [main, claude/game-plan-mode-wm0nae]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a run finish rather than cancelling it; a half-deployed game is worse
+# than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The build script only stages files — no bundler, no dependencies needed
+      # for it — but the tests are worth running before anything ships.
+      - name: Run tests
+        run: node --test test/*.test.mjs
+
+      - name: Build www/
+        run: node tools/build-www.mjs
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: www
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

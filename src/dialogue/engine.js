@@ -8,7 +8,7 @@
 
 import { DIALOGUE } from '../config.js';
 import { BAND_BY_ID, createBandState, updateBands } from './bands.js';
-import { interpolate, recordDeath, unlocks } from './memory.js';
+import { interpolate, recordDeath, recordLastWords, unlocks } from './memory.js';
 
 /** Shuffle-bag: exhaust every option before any repeats. Never bare random(). */
 class Bag {
@@ -346,12 +346,15 @@ export function trigger(d, kind, opts = {}) {
     // The death is recorded here rather than by the caller so that {lastDeath}
     // is already correct for this bot's own final line.
     d.livingCrew.delete(opts.botId);
-    recordDeath(d.memory, opts.botId, opts.cause ?? 'unknown');
+    recordDeath(d.memory, opts.botId, opts.cause ?? 'unknown', opts);
     const pool = d.lines.filter((l) => l.event === 'death' && l.speaker === opts.botId);
     const dad = d.lines.find((l) => l.id === 'dad_drop') ?? null;
     if (pool.length) {
       const line = pickWeighted(pool, d.rng);
       const utt = render(d, line, opts.botId, 'drop');
+      // The report quotes what was actually said, and which line that is comes
+      // out of the shuffle-bag right here.
+      recordLastWords(d.memory, opts.botId, utt.text);
       events.push({ kind: 'clear' });
       scheduleForced(d, utt, line, dad);
     }

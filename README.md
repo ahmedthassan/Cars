@@ -20,15 +20,46 @@ Not "a serious truck sim." It's a moving argument.
 
 When a bot leaves the truck they get a last line. Dadbot then says something unhelpful.
 
-## Play now
+## Play it
 
-1. Serve the folder (below) and open `mountain-truck.html` on your phone.
-2. Landscape.
-3. **GAS** / **BRAKE** to climb.
-4. **🔔 Honk** to scare the cargo (this is not helpful).
-5. Reach **TOP** with at least 2 bots still aboard.
+**On a computer — 30 seconds, nothing to install:**
 
-Desktop: `D`/`→` gas, `A`/`←` brake, `Space` honk, `R` restart, `~` debug overlay.
+```bash
+git clone https://github.com/ahmedthassan/Cars.git
+cd Cars && git checkout claude/game-plan-mode-wm0nae
+python3 -m http.server 5173
+```
+
+Open <http://localhost:5173/mountain-truck.html>. Resize the window wide and short to see
+what it looks like on a phone.
+
+**On your phone, same wifi:** find your computer's local IP (`ipconfig getifaddr en0` on a Mac,
+`hostname -I` on Linux) and open `http://<that-ip>:5173/mountain-truck.html`. Turn the phone
+landscape and add it to your home screen — it works offline from then on.
+
+**As a real Android app:** `npm install && npm run apk`, then install
+`android/app/build/outputs/apk/debug/app-debug.apk`. You'll need to allow installs from
+unknown sources; it's debug-signed, so it's for your own device.
+
+**As a real iOS app:** needs a Mac — see [MOBILE.md](MOBILE.md).
+
+**As a link you can send people:** deploy `www/` to any static host. A GitHub Pages workflow is
+in `.github/workflows/pages.yml`; enable it under Settings → Pages → Source: GitHub Actions.
+Pages on a *private* repo needs a paid plan, so on a free account make the repo public first or
+use another host.
+
+### How to play
+
+1. Landscape.
+2. **GAS** / **BRAKE** to climb.
+3. **🔔 Honk** to scare the cargo (this is not helpful, and when someone is hanging on it is
+   actively murderous).
+4. Reach **TOP** with at least 2 bots still aboard.
+
+Desktop: `D`/`→` gas, `A`/`←` brake, `Space` honk, `R` restart, `Esc` pause, `~` debug overlay.
+
+The debug overlay is worth a look — it shows the live physics state, which trigger band is
+open, and the band behind every line that just fired.
 
 ## Run locally
 
@@ -39,8 +70,30 @@ python3 -m http.server 5173
 Open `http://localhost:5173/mountain-truck.html`
 
 A server is required — the game is split into ES modules, which browsers refuse to load over
-`file://`. Matter.js is vendored in `vendor/`, so there is no network dependency and no npm
-install.
+`file://`. Matter.js is vendored in `vendor/`, so there is no network dependency.
+
+## Phones
+
+It ships three ways from this one source, with no bundler: as an installable offline PWA, and
+as native iOS and Android apps via Capacitor.
+
+```bash
+npm install
+npm run build     # assembles www/
+npm run apk       # debug Android APK
+npm run ios       # opens Xcode — macOS only
+```
+
+**See [MOBILE.md](MOBILE.md)** for the full path to both stores, including what has actually
+been verified and what has not. The short version: the Android APK compiles and has been
+inspected (4.8 MB, correct package, landscape locked, all assets inside) but has never been
+*run* — there is no device here. Nothing on the iOS side has been compiled at all, because
+Xcode does not exist on Linux; that first build happens on your Mac.
+
+`src/platform/native.js` is the only file that knows which target it is running on. Haptics,
+orientation lock, wake lock, safe-area insets, app lifecycle and the Android back button all
+live there, and every one of them degrades to silence rather than an error on a platform that
+lacks it.
 
 ## The dialogue engine
 
@@ -109,6 +162,32 @@ terrain is doing, the bot dangling off the side of the truck is the more interes
 `clinger` speaker resolves to whoever is actually hanging, and `any` deliberately excludes them
 — a bot holding on by one arm is not also doing the commentary.
 
+### Name your friends
+
+Renaming is the distribution channel, not a settings screen. Tap **Name the crew** on the
+splash (or **Rename crew** on the end card), type the names of people you know, and the game
+puts them on the trailer — on the bot bodies, in the speech bubbles, in the dialogue's
+`{lastDeath}` tokens, and across the Incident Report. Dadbot is in the list too; naming the
+driver after someone specific is most of the joke.
+
+Names persist in `localStorage`, cap at 12 characters, and clearing a field restores the
+original rather than leaving a nameless bot on the truck.
+
+`src/roster.js` is the single runtime source of truth for this. It exists because `memory.js`
+and `hud.js` each used to build a `{id: name}` map once at import time — which goes stale the
+instant a name changes, showing the new name on the truck and the old one in the dialogue.
+
+### The Incident Report
+
+The end card is the thing you screenshot. Who left, in what order, the cause **named** ("Into
+The Void", "Honked Off On Purpose"), the altitude it happened at, and the line they actually
+said on the way out — pulled from the shuffle-bag at the moment it fired, not reconstructed
+afterwards. Plus the blame split, where Dadbot picks up a share for every single departure
+because he was driving, and a larger one when you honked somebody off on purpose.
+
+It lays out in two columns so it fits a landscape phone in one screenshot, and **Share report**
+hands the same thing to the native share sheet, or the clipboard where there isn't one.
+
 ### Memory
 
 `src/dialogue/memory.js` keeps a session log — who died in what order, blame, honks, flips —
@@ -152,7 +231,7 @@ grabs on a level road climbs straight back and the scene never happens.
 ## Tests
 
 ```bash
-node --test test/dialogue.test.mjs
+npm test          # or: node --test test/dialogue.test.mjs
 ```
 
 The dialogue engine is pure functions over a plain state vector — no DOM, no Matter — so the
@@ -179,13 +258,13 @@ Two things worth knowing if you re-tune the map:
 
 ## Next funny upgrades
 
-From the spec's build order. Steps 1-4 are done; what's left:
+From the spec's build order. Steps 1-5 are done; what's left:
 
-1. Rename the bots + Incident Report end card. Players type their friends' names, screenshot,
-   send. That is the distribution channel.
-2. Map 2: The School Run — proves the location template (one new hazard, one new premise, one
-   dialogue pack).
-3. Auto-clip export — rolling 6-second buffer, 9:16.
+1. Map 2: The School Run — proves the location template (one new hazard, one new premise, one
+   dialogue pack). Suburban street, speed bumps that launch the cargo, and the only map where
+   going *slow* is the skill.
+2. Auto-clip export — rolling 6-second buffer, 9:16.
+3. Named deaths as collectibles, the daily seed, fake-ad mode.
 
 Expand the line pools as you go: the spec's target is ~170 lines, and adding them is a pure
 data edit in `lines.js`.

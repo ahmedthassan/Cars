@@ -1,0 +1,30 @@
+{
+  "name": "robot-haul",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mobile physics driving game. Dadbot drives. The cargo has opinions.",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 5173",
+    "test": "node --test test/*.test.mjs",
+    "build": "node tools/build-www.mjs",
+    "icons": "node tools/make-icons.mjs",
+    "sync": "npm run build && npx cap sync",
+    "android": "npm run sync && npx cap open android",
+    "ios": "npm run sync && npx cap open ios",
+    "apk": "npm run sync && cd android && ./gradlew assembleDebug"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.2.0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/haptics": "^6.0.2",
+    "@capacitor/ios": "^6.2.0",
+    "@capacitor/screen-orientation": "^6.0.3",
+    "@capacitor/status-bar": "^6.0.2"
+  }
+}

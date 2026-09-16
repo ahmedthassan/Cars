@@ -1,5 +1,6 @@
 // ── Rendering ─────────────────────────────────────────────────────────────────
 import { GAME, PHYSICS, TERRAIN } from '../config.js';
+import { nameOf } from '../roster.js';
 import { isOverGap } from '../physics/terrain.js';
 
 export function createCamera() {
@@ -12,7 +13,10 @@ export function updateCamera(cam, truck, canvas, dt) {
   const lead = Math.max(-160, Math.min(260, truck.cab.velocity.x * 26));
   cam.x += (target.x + lead - cam.x) * GAME.cameraLerp;
   cam.y += (target.y - 40 - cam.y) * GAME.cameraLerp;
-  cam.scale = Math.min(1.05, Math.max(0.62, (canvas.height / 620) * 0.95));
+  // Phones are short and very wide. Scaling off height alone leaves the truck
+  // looking distant on a 20:9 screen, so the ceiling is raised a little — but
+  // not far, because seeing the hill coming is what makes the climb a decision.
+  cam.scale = Math.min(1.28, Math.max(0.62, (canvas.height / 620) * 0.95));
   cam.shake = Math.max(0, cam.shake - dt * 2.6);
 }
 
@@ -244,7 +248,9 @@ export function drawBots(ctx, cam, canvas, truck) {
     ctx.fill();
     ctx.fillStyle = '#f2f7fc';
     ctx.font = 'bold 8px system-ui, sans-serif';
-    ctx.fillText(r.name.toUpperCase(), 0, 11.5);
+    // Resolved live rather than from the snapshot taken when the truck was
+    // built, so a rename shows on the bodies immediately.
+    ctx.fillText(nameOf(b.botId).toUpperCase(), 0, 11.5);
     ctx.restore();
   }
   ctx.restore();

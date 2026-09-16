@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#12161d">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Robot Haul">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
 <title>Robot Haul — The Mountain</title>
 <style>
   :root { color-scheme: dark; }
@@ -13,6 +19,10 @@
     margin: 0; height: 100%; overflow: hidden; background: #12161d;
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     touch-action: none; user-select: none; -webkit-user-select: none;
+    /* Stop iOS rubber-banding the whole page when you drag on the canvas, and
+       stop the pull-to-refresh gesture eating a downward swipe. */
+    overscroll-behavior: none; -webkit-overflow-scrolling: auto;
+    position: fixed; inset: 0; width: 100%;
   }
   #game { display: block; position: fixed; inset: 0; }
 
@@ -22,6 +32,11 @@
   }
   .pad.left  { left:  max(16px, env(safe-area-inset-left)); }
   .pad.right { right: max(16px, env(safe-area-inset-right)); }
+  button.ctl, #again, #pausecard button, #dbg {
+    /* Kills the 300ms tap delay and double-tap zoom without touching the
+       click event the card buttons rely on. */
+    touch-action: manipulation;
+  }
   button.ctl {
     min-width: 108px; height: 74px; border-radius: 18px; border: 2px solid rgba(255,255,255,0.22);
     background: rgba(16,20,28,0.72); color: #eef4fa; font: 700 15px/1 system-ui, sans-serif;
@@ -31,12 +46,16 @@
   #gas   { border-color: #6fcf7a; }
   #brake { border-color: #e8a34f; }
   #horn  { min-width: 84px; border-color: #7ec8f2; font-size: 22px; }
+  /* Developer affordance, not a feature. It ships (it is how you check that
+     every line had a physics reason) but it should not compete with the game. */
   #dbg {
-    position: fixed; top: max(12px, env(safe-area-inset-top)); right: 50%;
-    transform: translateX(50%); z-index: 5; height: 30px; padding: 0 12px;
-    border-radius: 9px; border: 1px solid rgba(255,255,255,0.18);
-    background: rgba(16,20,28,0.6); color: #9aa4b2; font: 600 10px/1 ui-monospace, monospace;
+    position: fixed; top: max(8px, env(safe-area-inset-top)); right: 50%;
+    transform: translateX(50%); z-index: 5; height: 22px; padding: 0 9px;
+    border-radius: 7px; border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(16,20,28,0.35); color: rgba(154,164,178,0.5);
+    font: 600 9px/1 ui-monospace, monospace; opacity: 0.55;
   }
+  #dbg:active { opacity: 1; }
 
   #tapstart {
     position: fixed; inset: 0; display: grid; place-content: center; gap: 10px;
@@ -48,18 +67,98 @@
   #tapstart h1 { margin: 0; font-size: clamp(26px, 7vw, 44px); color: #f2f6fa; }
   #tapstart p  { margin: 0; color: #9aa4b2; font-size: 13px; line-height: 1.6; max-width: 34ch; }
 
-  #endcard {
-    position: fixed; inset: 0; display: grid; place-content: center; gap: 12px;
-    text-align: center; z-index: 12; background: rgba(8,11,16,0.88); padding: 24px;
-  }
   #endcard[hidden] { display: none !important; }
-  #endtitle { margin: 0; font: 800 clamp(24px, 7vw, 40px)/1.1 ui-monospace, monospace; color: #ff8a7a; }
-  #enddetail { margin: 0; color: #dfe8f2; font-size: 14px; max-width: 36ch; }
-  #endorder { margin: 0; color: #8d97a5; font-size: 12px; }
-  #again {
-    margin-top: 6px; justify-self: center; height: 44px; padding: 0 22px; border-radius: 12px;
-    border: 2px solid #7ec8f2; background: transparent; color: #eef4fa; font: 700 14px system-ui;
+  #endcard { text-align: center; }
+  #pausecard[hidden] { display: none !important; }
+  #crewcard[hidden] { display: none !important; }
+
+  /* Both overlays scroll: a landscape phone is ~390px tall and the report can
+     run past that once the whole crew has come off. */
+  .sheet {
+    position: fixed; inset: 0; z-index: 12; overflow-y: auto;
+    background: rgba(8,11,16,0.93); padding: 12px 16px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   }
+  .sheet-inner { max-width: 560px; margin: 0 auto; }
+  #endcard .sheet-inner { max-width: 940px; }
+
+  /* Two columns on anything wide enough, which is every phone in landscape.
+     The card has to fit in one screenshot — that is what it is for. */
+  .reportgrid { display: grid; grid-template-columns: 1fr; gap: 0 22px; text-align: left; }
+  @media (min-width: 620px) {
+    .reportgrid { grid-template-columns: 1.35fr 1fr; }
+    .col-side .reporthead:first-child { margin-top: 16px; }
+  }
+
+  /* ── Crew screen ── */
+  #crewcard h2 { margin: 0 0 2px; font: 800 18px/1.2 system-ui; color: #eef4fa; }
+  #crewcard .hint { margin: 0 0 10px; color: #8d97a5; font-size: 11.5px; line-height: 1.4; }
+  .crewrow {
+    display: flex; align-items: center; gap: 9px; margin-bottom: 5px;
+    background: rgba(255,255,255,0.04); border-radius: 10px; padding: 5px 8px;
+  }
+  .crewchip {
+    width: 30px; height: 32px; border-radius: 6px; flex: 0 0 auto;
+    display: grid; place-content: center; font-size: 10px; color: rgba(10,14,20,0.85);
+  }
+  .crewrow input {
+    flex: 1 1 auto; min-width: 0; height: 34px; border-radius: 8px; padding: 0 10px;
+    background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.16);
+    color: #eef4fa; font: 700 14px system-ui; touch-action: manipulation;
+  }
+  .crewrow input:focus { outline: none; border-color: #7ec8f2; }
+  .crewjob { flex: 0 0 auto; width: 34%; color: #79828f; font-size: 10px; line-height: 1.3; }
+
+  /* ── Incident Report ── */
+  #endtitle { margin: 0; font: 800 clamp(20px, 4.6vw, 30px)/1.1 ui-monospace, monospace; color: #ff8a7a; }
+  #endtitle.win { color: #8ce99a; }
+  #enddetail { margin: 4px 0 0; color: #dfe8f2; font-size: 12px; line-height: 1.4; }
+  .reporthead {
+    margin: 12px 0 6px; font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.12em;
+    color: #6f7986; text-transform: uppercase;
+  }
+  .incident {
+    display: flex; gap: 9px; padding: 7px 10px; border-radius: 10px;
+    background: rgba(255,255,255,0.04); margin-bottom: 5px; text-align: left;
+  }
+  .incident .n {
+    flex: 0 0 auto; width: 20px; height: 20px; border-radius: 6px; margin-top: 1px;
+    display: grid; place-content: center; background: rgba(255,255,255,0.09);
+    font: 700 10px ui-monospace, monospace; color: #c9d6e4;
+  }
+  .incident .who { font: 700 14px system-ui; }
+  .incident .cause { font: 600 10px ui-monospace, monospace; color: #ff9f8f; letter-spacing: 0.06em; }
+  .incident .quote { margin-top: 2px; color: #aab6c4; font-size: 11.5px; font-style: italic; line-height: 1.35; }
+  .survivors { color: #8ce99a; font-size: 13px; font-weight: 600; text-align: left; }
+  .blamerow { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
+  .blamerow .bwho { flex: 0 0 auto; width: 84px; font: 700 11px system-ui; color: #dfe8f2;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .blamerow .bbar { flex: 1 1 auto; height: 9px; border-radius: 5px; background: rgba(255,255,255,0.09); overflow: hidden; }
+  .blamerow .bfill { height: 100%; border-radius: 5px; background: #e8736b; }
+  .blamerow .bpct { flex: 0 0 auto; width: 34px; text-align: right; font: 700 11px ui-monospace, monospace; color: #9aa4b2; }
+  .btnrow { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+  .btnrow button {
+    height: 40px; padding: 0 18px; border-radius: 12px; background: transparent;
+    color: #eef4fa; font: 700 14px system-ui; border: 2px solid #7ec8f2;
+    touch-action: manipulation;
+  }
+  .btnrow button.ghost { border-color: rgba(255,255,255,0.26); color: #9aa4b2; }
+  #sharenote { margin: 6px 0 0; color: #8ce99a; font-size: 11px; min-height: 13px; }
+  #pausecard {
+    position: fixed; inset: 0; display: grid; place-content: center; gap: 14px;
+    text-align: center; z-index: 11; background: rgba(8,11,16,0.84); padding: 24px;
+  }
+  #pausecard h2 { margin: 0; font: 800 clamp(22px, 6vw, 34px)/1.1 system-ui; color: #eef4fa; }
+  #pausecard p { margin: 0; color: #9aa4b2; font-size: 13px; }
+  #pausecard .row { display: flex; gap: 12px; justify-content: center; }
+  #pausecard button {
+    height: 44px; padding: 0 22px; border-radius: 12px; background: transparent;
+    color: #eef4fa; font: 700 14px system-ui; border: 2px solid #7ec8f2;
+  }
+  #pausecard button.ghost { border-color: rgba(255,255,255,0.28); color: #9aa4b2; }
+
 
   @media (orientation: portrait) {
     #rotate { display: grid; }
@@ -93,13 +192,45 @@
   <p>Desktop: <b>D</b>/<b>→</b> gas, <b>A</b>/<b>←</b> brake, <b>Space</b> honk,
      <b>R</b> restart, <b>~</b> debug.</p>
   <p style="color:#6f7986">Tap anywhere to start (and to allow sound).</p>
+  <button id="opencrew" style="margin-top:4px;justify-self:center;height:38px;padding:0 18px;
+    border-radius:10px;border:2px solid rgba(255,255,255,0.28);background:transparent;
+    color:#dfe8f2;font:700 13px system-ui;touch-action:manipulation">Name the crew</button>
 </div>
 
-<div id="endcard" hidden>
-  <h2 id="endtitle"></h2>
-  <p id="enddetail"></p>
-  <p id="endorder"></p>
-  <button id="again">Again</button>
+<div id="pausecard" hidden>
+  <h2>Paused</h2>
+  <p>The hill will wait. It is not going anywhere.</p>
+  <div class="row">
+    <button id="resume">Resume</button>
+    <button id="pauserestart" class="ghost">Restart</button>
+  </div>
+</div>
+
+<div id="crewcard" class="sheet" hidden>
+  <div class="sheet-inner">
+    <h2>Your crew</h2>
+    <p class="hint">Name them after people you know. It is funnier when the bot
+      screaming about the death percentage has your friend's name on it.</p>
+    <div id="crewlist"></div>
+    <div class="btnrow">
+      <button id="crewdone">Start driving</button>
+      <button id="crewreset" class="ghost">Reset names</button>
+    </div>
+  </div>
+</div>
+
+<div id="endcard" class="sheet" hidden>
+  <div class="sheet-inner">
+    <h2 id="endtitle"></h2>
+    <p id="enddetail"></p>
+    <div id="reportbody"></div>
+    <div class="btnrow">
+      <button id="again">Again</button>
+      <button id="share" class="ghost">Share report</button>
+      <button id="crew" class="ghost">Rename crew</button>
+    </div>
+    <p id="sharenote"></p>
+  </div>
 </div>
 
 <div id="rotate">🔄<br>Turn your phone sideways.<br>This is a landscape hill.</div>
@@ -109,11 +240,34 @@
 <script src="./vendor/matter.min.js"></script>
 <script type="module" src="./src/main.js"></script>
 <script>
-  // Any first touch anywhere dismisses the splash and unlocks audio.
-  addEventListener('pointerdown', () => {
+  // Any first touch anywhere dismisses the splash and unlocks audio — except a
+  // touch on the splash's own buttons. Hiding the splash on pointerdown pulls
+  // the button out from under the finger before its click can land, which made
+  // "Name the crew" impossible to press.
+  addEventListener('pointerdown', (e) => {
+    if (e.target.closest && e.target.closest('#tapstart button')) return;
     const s = document.getElementById('tapstart');
     if (s) s.hidden = true;
   });
+
+  // Offline support for the installed web app. Capacitor serves the same files
+  // from the app bundle, where a service worker is unnecessary — and on
+  // file:// it cannot register at all — so this is guarded rather than assumed.
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(() => {
+        /* first run offline, or served from a context that forbids workers */
+      });
+    });
+  }
+
+  // Pinch-zoom and long-press callouts, suppressed. Double-tap zoom is handled
+  // by `touch-action` in CSS rather than by cancelling touchend globally:
+  // cancelling touchend also suppresses the synthesized click event, which
+  // would quietly break every button that listens for one (Resume, Again,
+  // Restart) exactly when a player taps twice in a hurry.
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
 </script>
 </body>
 </html>

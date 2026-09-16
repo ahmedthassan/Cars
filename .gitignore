@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Generated web bundle — rebuilt by `npm run build`, never edited by hand.
+www/
+
+# Android build output and local machine paths
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+android/captures/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# iOS build output and dependencies
+ios/App/build/
+ios/App/Pods/
+ios/App/output/
+ios/App/App/public/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+
+# OS noise
+.DS_Store
+Thumbs.db

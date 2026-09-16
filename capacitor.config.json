@@ -1,0 +1,17 @@
+{
+  "appId": "com.robothaul.game",
+  "appName": "Robot Haul",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#12161d"
+  },
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#12161d",
+    "scrollEnabled": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
